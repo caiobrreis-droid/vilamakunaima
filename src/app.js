@@ -165,6 +165,8 @@ const state = {
   calendarNotes: JSON.parse(localStorage.getItem("vm_calendar_notes") || "{}"),
   editEventId: null,
   printEventId: null,
+  reportMonth: localStorage.getItem("vm_report_month") || "2026-06",
+  printReportMonth: null,
   calendarMode: "Mês",
   dark: localStorage.getItem("vm_theme") === "dark",
   events: normalizeEvents(JSON.parse(localStorage.getItem("vm_events") || "null") || demo.events)
@@ -393,6 +395,88 @@ function printEventSheet() {
   `;
 }
 
+function reportMonthOptions() {
+  const months = [...new Set(state.events.map(event => String(event.date || "").slice(0, 7)).filter(Boolean))].sort();
+  if (!months.includes(state.reportMonth)) months.push(state.reportMonth);
+  return months.sort().map(month => `<option value="${month}" ${month === state.reportMonth ? "selected" : ""}>${monthLabel(month)}</option>`).join("");
+}
+
+function monthLabel(month) {
+  const [year, monthNumber] = String(month).split("-");
+  const index = Number(monthNumber) - 1;
+  return `${monthNames[index] || monthNumber}/${year}`;
+}
+
+function eventsByMonth(month = state.reportMonth) {
+  return state.events
+    .filter(event => String(event.date || "").startsWith(month))
+    .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
+}
+
+function monthlySummary(month = state.reportMonth) {
+  const list = eventsByMonth(month);
+  const total = list.reduce((sum, event) => sum + Number(event.total || 0), 0);
+  const entry = list.reduce((sum, event) => sum + Number(event.entry || 0), 0);
+  const paid = list.reduce((sum, event) => sum + Number(event.paid || 0), 0);
+  const open = Math.max(total - paid, 0);
+  return {
+    list,
+    total,
+    entry,
+    paid,
+    open,
+    confirmed: list.filter(event => event.status === "Confirmado").length,
+    done: list.filter(event => event.status === "Realizado").length,
+    pendingPayment: list.filter(event => !paymentInfo(event).paidOff).length
+  };
+}
+
+function printMonthlyReport() {
+  if (!state.printReportMonth) return "";
+  const summary = monthlySummary(state.printReportMonth);
+  const rows = summary.list.map(event => `
+    <tr>
+      <td>${dateFmt.format(new Date(event.date))}</td>
+      <td>${escapeHtml(event.name)}</td>
+      <td>${escapeHtml(event.client)}</td>
+      <td>${escapeHtml(event.status)}</td>
+      <td>${brl.format(event.total || 0)}</td>
+      <td>${brl.format(event.entry || 0)}</td>
+      <td>${brl.format(event.paid || 0)}</td>
+      <td>${brl.format(paymentInfo(event).open)}</td>
+    </tr>
+  `).join("");
+  return `
+    <section class="print-only monthly-print">
+      <header class="print-header">
+        ${brandLogo("small")}
+        <div>
+          <strong>Vila Makunaima Eventos</strong>
+          <span>Relatório mensal financeiro</span>
+        </div>
+      </header>
+      <h1>Relatório de ${monthLabel(state.printReportMonth)}</h1>
+      <p class="print-status">Emitido em ${new Date().toLocaleString("pt-BR")} · ${summary.list.length} evento(s)</p>
+      <div class="print-grid">
+        <section><h2>Faturamento contratado</h2><p>${brl.format(summary.total)}</p></section>
+        <section><h2>Entradas</h2><p>${brl.format(summary.entry)}</p></section>
+        <section><h2>Valores pagos</h2><p>${brl.format(summary.paid)}</p></section>
+        <section><h2>Saldo pendente</h2><p>${brl.format(summary.open)}</p></section>
+      </div>
+      <table class="print-table">
+        <thead>
+          <tr><th>Data</th><th>Evento</th><th>Cliente</th><th>Status</th><th>Total</th><th>Entrada</th><th>Pago</th><th>Pendente</th></tr>
+        </thead>
+        <tbody>${rows || `<tr><td colspan="8">Nenhum evento cadastrado neste mês.</td></tr>`}</tbody>
+      </table>
+      <section class="print-notes">
+        <h2>Resumo</h2>
+        <p>Confirmados: ${summary.confirmed} · Realizados: ${summary.done} · Com pagamento pendente: ${summary.pendingPayment}</p>
+      </section>
+    </section>
+  `;
+}
+
 function openContractDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("vila-makunaima-documents", 1);
@@ -549,6 +633,7 @@ function layout() {
           Desenvolvido por <a href="https://www.instagram.com/sier_caio/" target="_blank" rel="noreferrer">Caio Reis</a>
         </footer>
         ${printEventSheet()}
+        ${printMonthlyReport()}
       </main>
     </div>
   `;
@@ -802,7 +887,43 @@ function docs() {
 }
 
 function reports() {
+  const summary = monthlySummary();
+  const rows = summary.list.map(event => [
+    dateFmt.format(new Date(event.date)),
+    event.name,
+    event.client,
+    event.status,
+    brl.format(event.total || 0),
+    brl.format(event.entry || 0),
+    brl.format(event.paid || 0),
+    brl.format(paymentInfo(event).open)
+  ]);
   return `
+    <section class="panel monthly-report">
+      <div class="panel-head">
+        <h3>Relatório mensal</h3>
+        <div class="report-controls">
+          <select id="reportMonth">${reportMonthOptions()}</select>
+          <button data-action="print-month-report">Imprimir relatório</button>
+        </div>
+      </div>
+      <section class="metrics-grid compact">
+        ${metric("Eventos no mês", summary.list.length)}
+        ${metric("Faturamento contratado", brl.format(summary.total))}
+        ${metric("Entradas", brl.format(summary.entry))}
+        ${metric("Valores pagos", brl.format(summary.paid))}
+        ${metric("Saldo pendente", brl.format(summary.open))}
+        ${metric("Confirmados", summary.confirmed)}
+        ${metric("Realizados", summary.done)}
+        ${metric("Com pendência", summary.pendingPayment)}
+      </section>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Data</th><th>Evento</th><th>Cliente</th><th>Status</th><th>Total</th><th>Entrada</th><th>Pago</th><th>Pendente</th></tr></thead>
+          <tbody>${rows.length ? rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="8">Nenhum evento cadastrado neste mês.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>
     <section class="dashboard-grid">
       <div class="panel"><div class="panel-head"><h3>Eventos por tipo</h3></div>${bars(groupByType())}</div>
       <div class="panel"><div class="panel-head"><h3>Eventos por status</h3></div>${bars(groupByStatus())}</div>
@@ -900,6 +1021,11 @@ function bind() {
   document.querySelector("#calendarYear")?.addEventListener("change", event => {
     state.calendarYear = Number(event.target.value);
     localStorage.setItem("vm_calendar_year", String(state.calendarYear));
+    render();
+  });
+  document.querySelector("#reportMonth")?.addEventListener("change", event => {
+    state.reportMonth = event.target.value;
+    localStorage.setItem("vm_report_month", state.reportMonth);
     render();
   });
   document.querySelectorAll(".day[data-date]").forEach(day => day.addEventListener("click", () => editCalendarNote(day.dataset.date)));
@@ -1191,13 +1317,19 @@ async function handleAction(action, btn) {
     render();
     setTimeout(() => window.print(), 80);
   }
+  if (action === "print-month-report") {
+    state.printReportMonth = state.reportMonth;
+    render();
+    setTimeout(() => window.print(), 80);
+  }
   if (action === "print-page") window.print();
   if (action === "export-csv") exportCsv();
 }
 
 window.addEventListener("afterprint", () => {
-  if (!state.printEventId) return;
+  if (!state.printEventId && !state.printReportMonth) return;
   state.printEventId = null;
+  state.printReportMonth = null;
   render();
 });
 
