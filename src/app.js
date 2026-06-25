@@ -151,6 +151,13 @@
 const state = {
   logged: localStorage.getItem("vm_session") === "active",
   role: localStorage.getItem("vm_role") || "Administrador",
+  user: JSON.parse(localStorage.getItem("vm_user") || "null"),
+  users: JSON.parse(localStorage.getItem("vm_users") || "null") || demo.users.map((user, index) => ({
+    ...user,
+    id: index + 1,
+    active: true,
+    password: index === 0 ? "admin123" : "123456"
+  })),
   view: "dashboard",
   search: "",
   calendarMonth: Number(localStorage.getItem("vm_calendar_month") || "6"),
@@ -215,7 +222,10 @@ async function requestJson(url, options = {}) {
 }
 
 async function loadServerState() {
-  if (location.protocol === "file:") return;
+  if (location.protocol === "file:") {
+    if (state.logged && !state.user) state.user = state.users[0];
+    return;
+  }
   try {
     const data = await requestJson("/api/state");
     if (data.storage !== "postgres") return;
@@ -233,9 +243,21 @@ async function loadServerState() {
     } else {
       await saveCalendarNotes();
     }
+    await refreshUsers();
   } catch (error) {
     console.warn("Usando armazenamento local; API indisponível.", error);
   }
+}
+
+async function refreshUsers() {
+  if (!api.available) return;
+  const data = await requestJson("/api/users");
+  state.users = data.users || [];
+  localStorage.setItem("vm_users", JSON.stringify(state.users));
+}
+
+function saveLocalUsers() {
+  localStorage.setItem("vm_users", JSON.stringify(state.users));
 }
 
 function fileToBase64(file) {
@@ -488,9 +510,6 @@ function login() {
         <form id="loginForm" class="form-stack">
           <label>E-mail<input name="email" type="email" value="admin@vilamakunaima.com" required /></label>
           <label>Senha<input name="password" type="password" value="admin123" required /></label>
-          <label>Perfil
-            <select name="role">${demo.users.map(u => `<option>${u.role}</option>`).join("")}</select>
-          </label>
           <button class="primary" type="submit">Entrar</button>
           <a href="#" class="muted-link">Esqueci minha senha</a>
         </form>
@@ -509,8 +528,8 @@ function layout() {
         <div class="logo-row">${brandLogo("small")}<div><strong>Vila Makunaima</strong><span>Eventos</span></div></div>
         <nav>${navItems.map(([id, label]) => `<button class="${state.view === id ? "active" : ""}" data-view="${id}">${label}</button>`).join("")}</nav>
         <div class="profile">
-          <strong>${state.role}</strong>
-          <span>Sessão segura local</span>
+          <strong>${escapeHtml(state.user?.name || state.role)}</strong>
+          <span>${escapeHtml(state.role)}${api.available ? " · salvo no Railway" : " · sessão local"}</span>
           <button data-action="logout">Sair</button>
         </div>
       </aside>
@@ -798,8 +817,17 @@ function serviceRanking() {
 }
 
 function settings() {
+  const isAdmin = state.role === "Administrador";
+  const userCards = state.users.map(u => `
+    <article class="mini-card">
+      <strong>${escapeHtml(u.name)}</strong>
+      <span>${escapeHtml(u.email)}</span>
+      <mark>${escapeHtml(u.role)}</mark>
+      ${u.active === false ? `<small>Sem acesso ativo</small>` : `<small>Acesso liberado</small>`}
+    </article>
+  `).join("");
   return `
-    <section class="split">
+    <section class="settings-grid">
       <div class="panel">
         <div class="panel-head"><h3>Configurações gerais</h3></div>
         <form class="event-form">
@@ -810,9 +838,35 @@ function settings() {
           <button class="primary" type="button">Salvar configurações</button>
         </form>
       </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Alterar minha senha</h3></div>
+        <form id="passwordForm" class="event-form">
+          <input name="password" type="password" placeholder="Nova senha" minlength="4" required />
+          <input name="confirm" type="password" placeholder="Confirmar nova senha" minlength="4" required />
+          <p class="form-hint">Essa senha será usada no próximo login do usuário atual.</p>
+          <button class="primary" type="submit">Salvar nova senha</button>
+        </form>
+      </div>
+      ${isAdmin ? `
+        <div class="panel">
+          <div class="panel-head"><h3>Liberar acesso para funcionário</h3></div>
+          <form id="userForm" class="event-form">
+            <input name="name" placeholder="Nome da pessoa" required />
+            <input name="email" type="email" placeholder="E-mail de login" required />
+            <select name="role">
+              <option>Funcionário/Equipe</option>
+              <option>Comercial/Atendimento</option>
+              <option>Administrador</option>
+            </select>
+            <input name="password" type="password" placeholder="Senha inicial" minlength="4" required />
+            <p class="form-hint">Depois de entrar, o funcionário também pode trocar a própria senha.</p>
+            <button class="primary" type="submit">Criar acesso</button>
+          </form>
+        </div>
+      ` : ""}
       <div class="panel wide">
         <div class="panel-head"><h3>Usuários e permissões</h3></div>
-        <div class="cards-3">${demo.users.map(u => `<article class="mini-card"><strong>${u.name}</strong><span>${u.email}</span><mark>${u.role}</mark></article>`).join("")}</div>
+        <div class="cards-3">${userCards}</div>
       </div>
     </section>
   `;
@@ -828,15 +882,7 @@ function tablePanel(title, headers, rows, exportButtons = false) {
 }
 
 function bind() {
-  document.querySelector("#loginForm")?.addEventListener("submit", event => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    state.role = data.get("role");
-    state.logged = true;
-    localStorage.setItem("vm_session", "active");
-    localStorage.setItem("vm_role", state.role);
-    render();
-  });
+  document.querySelector("#loginForm")?.addEventListener("submit", loginUser);
   document.querySelectorAll("[data-view]").forEach(btn => btn.addEventListener("click", () => {
     state.view = btn.dataset.view;
     render();
@@ -861,6 +907,112 @@ function bind() {
   document.querySelectorAll('input[data-action="upload-contract"]').forEach(input => input.addEventListener("change", () => uploadContract(input)));
   document.querySelectorAll('input[data-action="upload-receipts"]').forEach(input => input.addEventListener("change", () => uploadReceipts(input)));
   document.querySelector("#eventForm")?.addEventListener("submit", createEvent);
+  document.querySelector("#passwordForm")?.addEventListener("submit", changePassword);
+  document.querySelector("#userForm")?.addEventListener("submit", createUser);
+}
+
+async function loginUser(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const email = String(data.email || "").trim().toLowerCase();
+  const password = String(data.password || "");
+  try {
+    let user;
+    if (api.available) {
+      const response = await requestJson("/api/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password })
+      });
+      user = response.user;
+    } else {
+      user = state.users.find(item => item.active !== false && item.email.toLowerCase() === email && item.password === password);
+    }
+    if (!user) throw new Error("Login inválido");
+    state.user = user;
+    state.role = user.role;
+    state.logged = true;
+    localStorage.setItem("vm_session", "active");
+    localStorage.setItem("vm_role", state.role);
+    localStorage.setItem("vm_user", JSON.stringify(user));
+    render();
+  } catch (error) {
+    alert("E-mail ou senha inválidos.");
+  }
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const password = String(data.password || "");
+  const confirm = String(data.confirm || "");
+  if (password.length < 4) {
+    alert("A senha precisa ter pelo menos 4 caracteres.");
+    return;
+  }
+  if (password !== confirm) {
+    alert("As senhas digitadas não conferem.");
+    return;
+  }
+  const currentUser = state.user || state.users[0];
+  if (!currentUser) return;
+  if (api.available) {
+    const response = await requestJson(`/api/users/${currentUser.id}/password`, {
+      method: "PUT",
+      body: JSON.stringify({ password })
+    });
+    state.user = response.user;
+    localStorage.setItem("vm_user", JSON.stringify(state.user));
+    await refreshUsers();
+  } else {
+    state.users = state.users.map(user => String(user.id) === String(currentUser.id) ? { ...user, password } : user);
+    state.user = { ...currentUser, password };
+    localStorage.setItem("vm_user", JSON.stringify(state.user));
+    saveLocalUsers();
+  }
+  event.currentTarget.reset();
+  alert("Senha alterada com sucesso.");
+  render();
+}
+
+async function createUser(event) {
+  event.preventDefault();
+  if (state.role !== "Administrador") {
+    alert("Somente o administrador pode liberar novos acessos.");
+    return;
+  }
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const payload = {
+    name: String(data.name || "").trim(),
+    email: String(data.email || "").trim().toLowerCase(),
+    role: String(data.role || "Funcionário/Equipe"),
+    password: String(data.password || "")
+  };
+  if (!payload.name || !payload.email || payload.password.length < 4) {
+    alert("Preencha nome, e-mail e uma senha com pelo menos 4 caracteres.");
+    return;
+  }
+  try {
+    if (api.available) {
+      await requestJson("/api/users", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      await refreshUsers();
+    } else {
+      const exists = state.users.some(user => user.email.toLowerCase() === payload.email);
+      if (exists) {
+        alert("Já existe um usuário com esse e-mail.");
+        return;
+      }
+      state.users = [...state.users, { ...payload, id: Date.now(), active: true }];
+      saveLocalUsers();
+    }
+    event.currentTarget.reset();
+    alert("Acesso criado com sucesso.");
+    render();
+  } catch (error) {
+    alert(error.message.includes("409") ? "Já existe um usuário com esse e-mail." : "Não foi possível criar o acesso agora.");
+  }
 }
 async function createEvent(event) {
   event.preventDefault();
@@ -965,7 +1117,9 @@ async function uploadReceipts(input) {
 async function handleAction(action, btn) {
   if (action === "logout") {
     localStorage.removeItem("vm_session");
+    localStorage.removeItem("vm_user");
     state.logged = false;
+    state.user = null;
     render();
   }
   if (action === "theme") {

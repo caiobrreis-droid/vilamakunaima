@@ -1,11 +1,34 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const root = __dirname;
 const port = Number(process.env.PORT || 4173);
 const databaseUrl = process.env.DATABASE_URL;
 let poolPromise;
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored = "") {
+  const [salt, original] = String(stored).split(":");
+  if (!salt || !original) return false;
+  const candidate = hashPassword(password, salt).split(":")[1];
+  return crypto.timingSafeEqual(Buffer.from(candidate, "hex"), Buffer.from(original, "hex"));
+}
+
+function publicUser(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    active: row.active
+  };
+}
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -80,6 +103,24 @@ async function getPool() {
           unique(event_id, file_name)
         );
       `);
+      await pool.query(`
+        create table if not exists app_users (
+          id bigserial primary key,
+          name text not null,
+          email text not null unique,
+          role text not null,
+          password_hash text not null,
+          active boolean not null default true,
+          created_at timestamptz not null default now()
+        );
+      `);
+      const users = await pool.query("select count(*)::int as total from app_users");
+      if (!users.rows[0].total) {
+        await pool.query(
+          "insert into app_users(name, email, role, password_hash) values($1, $2, $3, $4)",
+          ["Admin Vila", "admin@vilamakunaima.com", "Administrador", hashPassword("admin123")]
+        );
+      }
       return pool;
     })();
   }
@@ -95,6 +136,75 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, { ok: true, storage: "postgres" });
+    return true;
+  }
+
+  if (req.method === "POST" && pathname === "/api/login") {
+    const payload = JSON.parse(await readBody(req));
+    const email = String(payload.email || "").trim().toLowerCase();
+    const password = String(payload.password || "");
+    const result = await pool.query(
+      "select id, name, email, role, active, password_hash from app_users where lower(email) = $1 and active = true",
+      [email]
+    );
+    const user = result.rows[0];
+    if (!user || !verifyPassword(password, user.password_hash)) {
+      sendJson(res, 401, { error: "E-mail ou senha inválidos." });
+      return true;
+    }
+    sendJson(res, 200, { ok: true, user: publicUser(user) });
+    return true;
+  }
+
+  if (req.method === "GET" && pathname === "/api/users") {
+    const result = await pool.query("select id, name, email, role, active from app_users order by id");
+    sendJson(res, 200, { users: result.rows.map(publicUser) });
+    return true;
+  }
+
+  if (req.method === "POST" && pathname === "/api/users") {
+    const payload = JSON.parse(await readBody(req));
+    const name = String(payload.name || "").trim();
+    const email = String(payload.email || "").trim().toLowerCase();
+    const role = String(payload.role || "Funcionário/Equipe").trim();
+    const password = String(payload.password || "");
+    if (!name || !email || password.length < 4) {
+      sendJson(res, 400, { error: "Informe nome, e-mail e uma senha com pelo menos 4 caracteres." });
+      return true;
+    }
+    try {
+      const result = await pool.query(
+        "insert into app_users(name, email, role, password_hash) values($1, $2, $3, $4) returning id, name, email, role, active",
+        [name, email, role, hashPassword(password)]
+      );
+      sendJson(res, 201, { ok: true, user: publicUser(result.rows[0]) });
+    } catch (error) {
+      if (error.code === "23505") {
+        sendJson(res, 409, { error: "Já existe um usuário com esse e-mail." });
+      } else {
+        throw error;
+      }
+    }
+    return true;
+  }
+
+  const userPasswordMatch = pathname.match(/^\/api\/users\/(\d+)\/password$/);
+  if (req.method === "PUT" && userPasswordMatch) {
+    const payload = JSON.parse(await readBody(req));
+    const password = String(payload.password || "");
+    if (password.length < 4) {
+      sendJson(res, 400, { error: "A senha precisa ter pelo menos 4 caracteres." });
+      return true;
+    }
+    const result = await pool.query(
+      "update app_users set password_hash = $1 where id = $2 returning id, name, email, role, active",
+      [hashPassword(password), userPasswordMatch[1]]
+    );
+    if (!result.rowCount) {
+      sendJson(res, 404, { error: "Usuário não encontrado." });
+      return true;
+    }
+    sendJson(res, 200, { ok: true, user: publicUser(result.rows[0]) });
     return true;
   }
 

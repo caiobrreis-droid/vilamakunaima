@@ -17,3 +17,13 @@ create table if not exists app_documents (
 
 create index if not exists app_documents_event_id_idx
 on app_documents(event_id);
+
+create table if not exists app_users (
+  id bigserial primary key,
+  name text not null,
+  email text not null unique,
+  role text not null,
+  password_hash text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);

@@ -432,10 +432,17 @@ mark {
   background: linear-gradient(90deg, var(--gold), var(--green));
 }
 
-.split {
+.split, .settings-grid {
   display: grid;
   grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
   gap: 18px;
+}
+.settings-grid {
+  grid-template-columns: minmax(280px, .8fr) minmax(280px, .8fr) minmax(360px, 1.2fr);
+  align-items: start;
+}
+.settings-grid .wide {
+  grid-column: 1 / -1;
 }
 .event-form {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -668,6 +675,10 @@ th {
   display: grid;
   gap: 8px;
 }
+.mini-card small {
+  color: var(--muted);
+  font-weight: 700;
+}
 .empty { color: var(--muted); padding: 16px; }
 
 @media (max-width: 1100px) {
@@ -681,7 +692,8 @@ th {
   }
   nav { grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 1 1 100%; }
   .profile { margin-top: 0; margin-left: auto; }
-  .metrics-grid, .dashboard-grid, .split { grid-template-columns: 1fr 1fr; }
+  .metrics-grid, .dashboard-grid, .split, .settings-grid { grid-template-columns: 1fr 1fr; }
+  .settings-grid .wide { grid-column: 1 / -1; }
   .calendar { grid-template-columns: repeat(7, minmax(72px, 1fr)); }
 }
 @media (max-width: 760px) {
@@ -711,7 +723,8 @@ th {
     margin-right: auto;
   }
   .topbar, .top-actions, .sidebar { align-items: stretch; flex-direction: column; }
-  nav, .metrics-grid, .dashboard-grid, .split, .event-form, dl, .cards-3 { grid-template-columns: 1fr; }
+  nav, .metrics-grid, .dashboard-grid, .split, .settings-grid, .event-form, dl, .cards-3 { grid-template-columns: 1fr; }
+  .settings-grid .wide { grid-column: auto; }
   .profile { margin-left: 0; }
   .calendar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .calendar > strong { display: none; }
