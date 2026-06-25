@@ -45,9 +45,10 @@ const mimeTypes = {
 };
 
 function send(res, status, body, type = "text/plain; charset=utf-8", extraHeaders = {}) {
+  const dynamicAsset = type.includes("text/html") || type.includes("text/css") || type.includes("javascript");
   res.writeHead(status, {
     "Content-Type": type,
-    "Cache-Control": status === 200 ? "public, max-age=3600" : "no-store",
+    "Cache-Control": status !== 200 || dynamicAsset ? "no-store" : "public, max-age=3600",
     ...extraHeaders
   });
   res.end(body);
