@@ -41,13 +41,15 @@ A autenticação desta versão é simulada no navegador com `localStorage`. Para
 1. No Railway, clique em **New Project**.
 2. Escolha **Deploy from GitHub repo**.
 3. Selecione `caiobrreis-droid/vilamakunaima`.
-4. O Railway usará `npm start`, configurado em `railway.json`.
-5. Após publicar, abra a URL gerada pelo Railway.
+4. Dentro do projeto, clique em **Add** e escolha **Database > PostgreSQL**.
+5. O Railway cria a variável `DATABASE_URL` automaticamente para o serviço.
+6. O Railway usará `npm start`, configurado em `railway.json`.
+7. Após publicar, abra a URL gerada pelo Railway.
 
-### Evolução com banco real
+Com `DATABASE_URL` configurada, o sistema salva eventos, agenda e documentos PDF no PostgreSQL. Se o app for aberto direto por `file://`, ele usa armazenamento local do navegador apenas como fallback.
 
-1. Criar um projeto Supabase/PostgreSQL e executar `database/schema.sql`.
-2. Trocar os dados simulados de `src/app.js` por chamadas API.
-3. Configurar upload de contratos/comprovantes em Supabase Storage.
-4. Otimizar `assets/login-bg.mp4` para publicação online, se necessário.
-5. Publicar o frontend em Vercel, Netlify ou Cloudflare Pages.
+### Evolução futura
+
+1. Criar login real com usuários e permissões no banco.
+2. Separar clientes, pagamentos e eventos em tabelas relacionais próprias.
+3. Otimizar `assets/login-bg.mp4` para publicação online, se necessário.

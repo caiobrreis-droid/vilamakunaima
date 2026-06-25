@@ -163,6 +163,11 @@ const state = {
   events: normalizeEvents(JSON.parse(localStorage.getItem("vm_events") || "null") || demo.events)
 };
 
+const api = {
+  available: false,
+  storage: "local"
+};
+
 let searchTimer;
 const app = document.querySelector("#app");
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -198,6 +203,48 @@ function paymentInfo(event) {
   const open = Math.max(total - paid, 0);
   const paidOff = total > 0 && paid >= total;
   return { total, paid, open, paidOff };
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    ...options
+  });
+  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+  return response.json();
+}
+
+async function loadServerState() {
+  if (location.protocol === "file:") return;
+  try {
+    const data = await requestJson("/api/state");
+    if (data.storage !== "postgres") return;
+    api.available = true;
+    api.storage = "postgres";
+    if (Array.isArray(data.events)) {
+      state.events = normalizeEvents(data.events);
+      localStorage.setItem("vm_events", JSON.stringify(state.events));
+    } else {
+      await saveEvents();
+    }
+    if (data.calendarNotes && typeof data.calendarNotes === "object") {
+      state.calendarNotes = data.calendarNotes;
+      localStorage.setItem("vm_calendar_notes", JSON.stringify(state.calendarNotes));
+    } else {
+      await saveCalendarNotes();
+    }
+  } catch (error) {
+    console.warn("Usando armazenamento local; API indisponível.", error);
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 function normalizeText(value) {
@@ -333,7 +380,20 @@ function openContractDb() {
   });
 }
 
-async function saveContractFile(eventId, file) {
+async function saveContractFile(eventId, file, docType = "Documento") {
+  if (api.available) {
+    await requestJson("/api/documents", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId,
+        fileName: file.name,
+        docType,
+        contentType: file.type || "application/pdf",
+        base64: await fileToBase64(file)
+      })
+    });
+    return;
+  }
   const db = await openContractDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("contracts", "readwrite");
@@ -344,6 +404,11 @@ async function saveContractFile(eventId, file) {
 }
 
 async function getContractFile(eventId, fileName) {
+  if (api.available) {
+    const response = await fetch(`/api/documents/${encodeURIComponent(eventId)}/${encodeURIComponent(fileName)}`);
+    if (!response.ok) return null;
+    return response.blob();
+  }
   const db = await openContractDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("contracts", "readonly");
@@ -380,13 +445,25 @@ const totals = () => {
   };
 };
 
-function saveEvents() {
+async function saveEvents() {
   state.events = normalizeEvents(state.events);
   localStorage.setItem("vm_events", JSON.stringify(state.events));
+  if (api.available) {
+    await requestJson("/api/events", {
+      method: "PUT",
+      body: JSON.stringify(state.events)
+    });
+  }
 }
 
-function saveCalendarNotes() {
+async function saveCalendarNotes() {
   localStorage.setItem("vm_calendar_notes", JSON.stringify(state.calendarNotes));
+  if (api.available) {
+    await requestJson("/api/calendar-notes", {
+      method: "PUT",
+      body: JSON.stringify(state.calendarNotes)
+    });
+  }
 }
 
 function render() {
@@ -785,7 +862,7 @@ function bind() {
   document.querySelectorAll('input[data-action="upload-receipts"]').forEach(input => input.addEventListener("change", () => uploadReceipts(input)));
   document.querySelector("#eventForm")?.addEventListener("submit", createEvent);
 }
-function createEvent(event) {
+async function createEvent(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
   const editingId = data.editId;
@@ -828,18 +905,18 @@ function createEvent(event) {
       documents: []
     });
   }
-  saveEvents();
+  await saveEvents();
   render();
 }
 
-function editCalendarNote(date) {
+async function editCalendarNote(date) {
   const current = state.calendarNotes[date] || "";
   const text = prompt(`Observação para ${date}. Deixe vazio para limpar:`, current);
   if (text === null) return;
   const clean = text.trim();
   if (clean) state.calendarNotes[date] = clean;
   else delete state.calendarNotes[date];
-  saveCalendarNotes();
+  await saveCalendarNotes();
   render();
 }
 
@@ -851,14 +928,14 @@ async function uploadContract(input) {
     input.value = "";
     return;
   }
-  await saveContractFile(input.dataset.eventId, file);
+  await saveContractFile(input.dataset.eventId, file, "Contrato assinado");
   state.events = state.events.map(event => {
     if (String(event.id) !== String(input.dataset.eventId)) return event;
     const docs = event.documents || [];
     const exists = docs.some(doc => (typeof doc === "string" ? doc : doc.name) === file.name);
     return { ...event, documents: exists ? docs : [...docs, { name: file.name, type: "Contrato assinado" }] };
   });
-  saveEvents();
+  await saveEvents();
   render();
 }
 
@@ -871,7 +948,7 @@ async function uploadReceipts(input) {
     input.value = "";
     return;
   }
-  await Promise.all(files.map(file => saveContractFile(input.dataset.eventId, file)));
+  await Promise.all(files.map(file => saveContractFile(input.dataset.eventId, file, "Comprovante de pagamento")));
   state.events = state.events.map(event => {
     if (String(event.id) !== String(input.dataset.eventId)) return event;
     const docs = event.documents || [];
@@ -882,10 +959,10 @@ async function uploadReceipts(input) {
     });
     return { ...event, documents: next };
   });
-  saveEvents();
+  await saveEvents();
   render();
 }
-function handleAction(action, btn) {
+async function handleAction(action, btn) {
   if (action === "logout") {
     localStorage.removeItem("vm_session");
     state.logged = false;
@@ -929,7 +1006,7 @@ function handleAction(action, btn) {
     if (!ok) return;
     state.events = state.events.filter(item => String(item.id) !== String(btn.dataset.eventId));
     if (String(state.editEventId) === String(btn.dataset.eventId)) state.editEventId = null;
-    saveEvents();
+    await saveEvents();
     render();
   }
   if (action === "cancel-edit") {
@@ -982,7 +1059,12 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-render();
+async function boot() {
+  await loadServerState();
+  render();
+}
+
+boot();
 
 
 
