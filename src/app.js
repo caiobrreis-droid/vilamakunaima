@@ -169,6 +169,7 @@ const state = {
   reportEventId: localStorage.getItem("vm_report_event") || "all",
   printReportMonth: null,
   printReportEventId: "all",
+  saveStatus: "",
   calendarMode: "Mês",
   dark: localStorage.getItem("vm_theme") === "dark",
   events: normalizeEvents(JSON.parse(localStorage.getItem("vm_events") || "null") || demo.events)
@@ -578,10 +579,18 @@ async function saveEvents() {
   state.events = normalizeEvents(state.events);
   localStorage.setItem("vm_events", JSON.stringify(state.events));
   if (api.available) {
-    await requestJson("/api/events", {
-      method: "PUT",
-      body: JSON.stringify(state.events)
-    });
+    try {
+      await requestJson("/api/events", {
+        method: "PUT",
+        body: JSON.stringify(state.events)
+      });
+      state.saveStatus = `Última alteração salva no Railway às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+    } catch (error) {
+      state.saveStatus = "Falha ao salvar no Railway. Tente novamente.";
+      throw error;
+    }
+  } else {
+    state.saveStatus = "Alteração salva somente neste navegador.";
   }
 }
 
@@ -637,6 +646,7 @@ function layout() {
         <div class="profile">
           <strong>${escapeHtml(state.user?.name || state.role)}</strong>
           <span>${escapeHtml(state.role)}${api.available ? " · salvo no Railway" : " · sessão local"}</span>
+          ${state.saveStatus ? `<span class="save-status">${escapeHtml(state.saveStatus)}</span>` : ""}
           <button data-action="logout">Sair</button>
         </div>
       </aside>
@@ -804,7 +814,10 @@ function events() {
           <textarea name="servicesText" placeholder="Serviços do evento: buffet, decoração, som, iluminação...">${escapeHtml((editing?.services || []).join("\n"))}</textarea>
           <p class="form-hint">Digite um serviço por linha ou separe por vírgulas. Exemplo: buffet, decoração, segurança.</p>
           <textarea name="notes" placeholder="Observações gerais">${escapeHtml(editing?.notes || "")}</textarea>
-          <button class="primary" type="submit">${editing ? "Salvar alterações" : "Cadastrar evento"}</button>
+          <div class="form-actions">
+            <button class="primary" type="submit">${editing ? "Salvar alterações no Railway" : "Cadastrar evento no Railway"}</button>
+            <small>As alterações só ficam gravadas depois de clicar neste botão.</small>
+          </div>
         </form>
       </div>
       <div class="panel wide">
@@ -1224,7 +1237,13 @@ async function createEvent(event) {
       documents: []
     });
   }
-  await saveEvents();
+  try {
+    await saveEvents();
+  } catch (error) {
+    alert("Não consegui salvar essa alteração no Railway. Verifique a conexão e tente clicar em salvar novamente.");
+    render();
+    return;
+  }
   render();
 }
 
