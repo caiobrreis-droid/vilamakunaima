@@ -166,7 +166,9 @@ const state = {
   editEventId: null,
   printEventId: null,
   reportMonth: localStorage.getItem("vm_report_month") || "2026-06",
+  reportEventId: localStorage.getItem("vm_report_event") || "all",
   printReportMonth: null,
+  printReportEventId: "all",
   calendarMode: "Mês",
   dark: localStorage.getItem("vm_theme") === "dark",
   events: normalizeEvents(JSON.parse(localStorage.getItem("vm_events") || "null") || demo.events)
@@ -401,6 +403,19 @@ function reportMonthOptions() {
   return months.sort().map(month => `<option value="${month}" ${month === state.reportMonth ? "selected" : ""}>${monthLabel(month)}</option>`).join("");
 }
 
+function reportEventOptions(month = state.reportMonth) {
+  const events = eventsByMonth(month);
+  const selectedExists = events.some(event => String(event.id) === String(state.reportEventId));
+  if (!selectedExists && state.reportEventId !== "all") {
+    state.reportEventId = "all";
+    localStorage.setItem("vm_report_event", "all");
+  }
+  return `
+    <option value="all" ${state.reportEventId === "all" ? "selected" : ""}>Todos os eventos do mês</option>
+    ${events.map(event => `<option value="${event.id}" ${String(event.id) === String(state.reportEventId) ? "selected" : ""}>${escapeHtml(event.name)} · ${escapeHtml(event.client)}</option>`).join("")}
+  `;
+}
+
 function monthLabel(month) {
   const [year, monthNumber] = String(month).split("-");
   const index = Number(monthNumber) - 1;
@@ -413,8 +428,14 @@ function eventsByMonth(month = state.reportMonth) {
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
 }
 
-function monthlySummary(month = state.reportMonth) {
+function reportEvents(month = state.reportMonth, eventId = state.reportEventId) {
   const list = eventsByMonth(month);
+  if (!eventId || eventId === "all") return list;
+  return list.filter(event => String(event.id) === String(eventId));
+}
+
+function monthlySummary(month = state.reportMonth, eventId = state.reportEventId) {
+  const list = reportEvents(month, eventId);
   const total = list.reduce((sum, event) => sum + Number(event.total || 0), 0);
   const entry = list.reduce((sum, event) => sum + Number(event.entry || 0), 0);
   const paid = list.reduce((sum, event) => sum + Number(event.paid || 0), 0);
@@ -433,7 +454,9 @@ function monthlySummary(month = state.reportMonth) {
 
 function printMonthlyReport() {
   if (!state.printReportMonth) return "";
-  const summary = monthlySummary(state.printReportMonth);
+  const summary = monthlySummary(state.printReportMonth, state.printReportEventId);
+  const selectedEvent = state.printReportEventId === "all" ? null : state.events.find(event => String(event.id) === String(state.printReportEventId));
+  const reportTitle = selectedEvent ? `Relatório do evento ${selectedEvent.name}` : `Relatório de ${monthLabel(state.printReportMonth)}`;
   const rows = summary.list.map(event => `
     <tr>
       <td>${dateFmt.format(new Date(event.date))}</td>
@@ -455,8 +478,8 @@ function printMonthlyReport() {
           <span>Relatório mensal financeiro</span>
         </div>
       </header>
-      <h1>Relatório de ${monthLabel(state.printReportMonth)}</h1>
-      <p class="print-status">Emitido em ${new Date().toLocaleString("pt-BR")} · ${summary.list.length} evento(s)</p>
+      <h1>${escapeHtml(reportTitle)}</h1>
+      <p class="print-status">${monthLabel(state.printReportMonth)} · Emitido em ${new Date().toLocaleString("pt-BR")} · ${summary.list.length} evento(s)</p>
       <div class="print-grid">
         <section><h2>Faturamento contratado</h2><p>${brl.format(summary.total)}</p></section>
         <section><h2>Entradas</h2><p>${brl.format(summary.entry)}</p></section>
@@ -887,7 +910,7 @@ function docs() {
 }
 
 function reports() {
-  const summary = monthlySummary();
+  const summary = monthlySummary(state.reportMonth, state.reportEventId);
   const rows = summary.list.map(event => [
     dateFmt.format(new Date(event.date)),
     event.name,
@@ -904,6 +927,7 @@ function reports() {
         <h3>Relatório mensal</h3>
         <div class="report-controls">
           <select id="reportMonth">${reportMonthOptions()}</select>
+          <select id="reportEvent">${reportEventOptions()}</select>
           <button data-action="print-month-report">Imprimir relatório</button>
         </div>
       </div>
@@ -1025,7 +1049,14 @@ function bind() {
   });
   document.querySelector("#reportMonth")?.addEventListener("change", event => {
     state.reportMonth = event.target.value;
+    state.reportEventId = "all";
     localStorage.setItem("vm_report_month", state.reportMonth);
+    localStorage.setItem("vm_report_event", state.reportEventId);
+    render();
+  });
+  document.querySelector("#reportEvent")?.addEventListener("change", event => {
+    state.reportEventId = event.target.value;
+    localStorage.setItem("vm_report_event", state.reportEventId);
     render();
   });
   document.querySelectorAll(".day[data-date]").forEach(day => day.addEventListener("click", () => editCalendarNote(day.dataset.date)));
@@ -1319,6 +1350,7 @@ async function handleAction(action, btn) {
   }
   if (action === "print-month-report") {
     state.printReportMonth = state.reportMonth;
+    state.printReportEventId = state.reportEventId;
     render();
     setTimeout(() => window.print(), 80);
   }
@@ -1330,6 +1362,7 @@ window.addEventListener("afterprint", () => {
   if (!state.printEventId && !state.printReportMonth) return;
   state.printEventId = null;
   state.printReportMonth = null;
+  state.printReportEventId = "all";
   render();
 });
 

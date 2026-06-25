@@ -444,6 +444,9 @@ mark {
   width: auto;
   min-width: 170px;
 }
+.report-controls #reportEvent {
+  min-width: min(100%, 340px);
+}
 
 .split, .settings-grid {
   display: grid;
