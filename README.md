@@ -36,6 +36,16 @@ A autenticação desta versão é simulada no navegador com `localStorage`. Para
 
 ## Próximos passos para publicar
 
+### Railway
+
+1. No Railway, clique em **New Project**.
+2. Escolha **Deploy from GitHub repo**.
+3. Selecione `caiobrreis-droid/vilamakunaima`.
+4. O Railway usará `npm start`, configurado em `railway.json`.
+5. Após publicar, abra a URL gerada pelo Railway.
+
+### Evolução com banco real
+
 1. Criar um projeto Supabase/PostgreSQL e executar `database/schema.sql`.
 2. Trocar os dados simulados de `src/app.js` por chamadas API.
 3. Configurar upload de contratos/comprovantes em Supabase Storage.
