@@ -747,6 +747,13 @@ function bars(data) {
   `).join("");
 }
 
+function splitList(value) {
+  return String(value || "")
+    .split(/\n|,/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
 function eventRow(e) {
   return `
     <article class="event-row">
@@ -794,6 +801,8 @@ function events() {
           </label>
           <p class="form-hint">Se ainda existir saldo, o evento exibirá o alerta "resto do pagamento pendente".</p>
           <input name="due" type="date" value="${value("due")}" />
+          <textarea name="servicesText" placeholder="Serviços do evento: buffet, decoração, som, iluminação...">${escapeHtml((editing?.services || []).join("\n"))}</textarea>
+          <p class="form-hint">Digite um serviço por linha ou separe por vírgulas. Exemplo: buffet, decoração, segurança.</p>
           <textarea name="notes" placeholder="Observações gerais">${escapeHtml(editing?.notes || "")}</textarea>
           <button class="primary" type="submit">${editing ? "Salvar alterações" : "Cadastrar evento"}</button>
         </form>
@@ -1185,6 +1194,7 @@ async function createEvent(event) {
   const paidOff = data.paidOff === "on";
   if (paidOff) paid = total;
   const paymentStatus = paidOff || (total > 0 && paid >= total) ? "Pago/Quitado" : paid > 0 ? "Parcial" : "Pendente";
+  const services = splitList(data.servicesText);
   const payload = {
     ...data,
     id: editingId ? Number(editingId) || editingId : Date.now(),
@@ -1193,15 +1203,16 @@ async function createEvent(event) {
     entry: Number(data.entry || 0),
     paid,
     paymentStatus,
-    payment: "A definir"
+    payment: "A definir",
+    services: services.length ? services : ["Locação do espaço"]
   };
   delete payload.editId;
   delete payload.paidOff;
+  delete payload.servicesText;
   if (editingId) {
     state.events = state.events.map(e => String(e.id) === String(editingId) ? {
       ...e,
       ...payload,
-      services: e.services || ["Locação do espaço"],
       checklist: e.checklist || ["Estrutura conferida"],
       documents: e.documents || []
     } : e);
@@ -1209,7 +1220,6 @@ async function createEvent(event) {
   } else {
     state.events.unshift({
       ...payload,
-      services: ["Locação do espaço"],
       checklist: ["Estrutura conferida"],
       documents: []
     });
