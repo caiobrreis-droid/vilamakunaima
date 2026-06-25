@@ -1,0 +1,13 @@
+{
+  "name": "vila-makunaima-eventos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema web para gerenciamento de eventos da Vila Makunaima.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  }
+}
