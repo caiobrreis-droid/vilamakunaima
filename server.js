@@ -125,9 +125,9 @@ async function getPool() {
       await pool.query(`
         insert into app_events(id, value, updated_at)
         select item->>'id', item, now()
-        from app_state, jsonb_array_elements(value) as item
+        from app_state,
+          jsonb_array_elements(case when jsonb_typeof(value) = 'array' then value else '[]'::jsonb end) as item
         where key = 'events'
-          and jsonb_typeof(value) = 'array'
           and item ? 'id'
         on conflict(id) do nothing;
       `);
