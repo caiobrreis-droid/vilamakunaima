@@ -584,9 +584,9 @@ async function saveEvents() {
         method: "PUT",
         body: JSON.stringify(state.events)
       });
-      state.saveStatus = `Última alteração salva no Railway às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+      state.saveStatus = `Última alteração salva às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
     } catch (error) {
-      state.saveStatus = "Falha ao salvar no Railway. Tente novamente.";
+      state.saveStatus = "Falha ao salvar. Tente novamente.";
       throw error;
     }
   } else {
@@ -645,7 +645,7 @@ function layout() {
         <nav>${navItems.map(([id, label]) => `<button class="${state.view === id ? "active" : ""}" data-view="${id}">${label}</button>`).join("")}</nav>
         <div class="profile">
           <strong>${escapeHtml(state.user?.name || state.role)}</strong>
-          <span>${escapeHtml(state.role)}${api.available ? " · salvo no Railway" : " · sessão local"}</span>
+          <span>${escapeHtml(state.role)}${api.available ? " · sessão online" : " · sessão local"}</span>
           ${state.saveStatus ? `<span class="save-status">${escapeHtml(state.saveStatus)}</span>` : ""}
           <button data-action="logout">Sair</button>
         </div>
@@ -815,7 +815,7 @@ function events() {
           <p class="form-hint">Digite um serviço por linha ou separe por vírgulas. Exemplo: buffet, decoração, segurança.</p>
           <textarea name="notes" placeholder="Observações gerais">${escapeHtml(editing?.notes || "")}</textarea>
           <div class="form-actions">
-            <button class="primary" type="submit">${editing ? "Salvar alterações no Railway" : "Cadastrar evento no Railway"}</button>
+            <button class="primary" type="submit">${editing ? "Salvar alterações" : "Cadastrar evento"}</button>
             <small>As alterações só ficam gravadas depois de clicar neste botão.</small>
           </div>
         </form>
@@ -1240,7 +1240,7 @@ async function createEvent(event) {
   try {
     await saveEvents();
   } catch (error) {
-    alert("Não consegui salvar essa alteração no Railway. Verifique a conexão e tente clicar em salvar novamente.");
+    alert("Não consegui salvar essa alteração. Verifique a conexão e tente clicar em salvar novamente.");
     render();
     return;
   }
