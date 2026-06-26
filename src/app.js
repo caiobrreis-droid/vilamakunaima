@@ -170,6 +170,7 @@ const state = {
   printReportMonth: null,
   printReportEventId: "all",
   saveStatus: "",
+  dataError: "",
   calendarMode: "Mês",
   dark: localStorage.getItem("vm_theme") === "dark",
   events: normalizeEvents(JSON.parse(localStorage.getItem("vm_events") || "null") || demo.events)
@@ -233,9 +234,13 @@ async function loadServerState() {
   }
   try {
     const data = await requestJson("/api/state");
-    if (data.storage !== "postgres") return;
+    if (data.storage !== "postgres") {
+      state.dataError = "O banco de dados online não está conectado. Nenhuma alteração será considerada salva.";
+      return;
+    }
     api.available = true;
     api.storage = "postgres";
+    state.dataError = "";
     if (Array.isArray(data.events)) {
       state.events = normalizeEvents(data.events);
       localStorage.setItem("vm_events", JSON.stringify(state.events));
@@ -250,7 +255,8 @@ async function loadServerState() {
     }
     await refreshUsers();
   } catch (error) {
-    console.warn("Usando armazenamento local; API indisponível.", error);
+    state.dataError = "Não foi possível carregar os dados salvos. Recarregue a página antes de cadastrar ou editar eventos.";
+    console.warn("API indisponível.", error);
   }
 }
 
@@ -651,8 +657,22 @@ async function saveCalendarNotes() {
 function render() {
   state.events = normalizeEvents(state.events);
   document.body.classList.toggle("dark", state.dark);
-  app.innerHTML = state.logged ? layout() : login();
+  app.innerHTML = state.logged ? (state.dataError ? dataErrorScreen() : layout()) : login();
   bind();
+}
+
+function dataErrorScreen() {
+  return `
+    <main class="login-screen error-screen">
+      <section class="login-card">
+        ${brandLogo("large")}
+        <p class="eyebrow">Vila Makunaima Eventos</p>
+        <h1>Dados não carregados</h1>
+        <p class="login-subtitle">${escapeHtml(state.dataError)}</p>
+        <button class="primary" type="button" data-action="reload-page">Recarregar sistema</button>
+      </section>
+    </main>
+  `;
 }
 
 function login() {
@@ -1136,6 +1156,10 @@ function bind() {
 
 async function loginUser(event) {
   event.preventDefault();
+  if (state.dataError) {
+    alert(state.dataError);
+    return;
+  }
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
   const email = String(data.email || "").trim().toLowerCase();
   const password = String(data.password || "");
@@ -1239,6 +1263,10 @@ async function createUser(event) {
 }
 async function createEvent(event) {
   event.preventDefault();
+  if (!api.available) {
+    alert("Os dados online ainda não foram carregados. Recarregue o sistema antes de cadastrar ou editar eventos.");
+    return;
+  }
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
   const editingId = data.editId;
   const conflict = state.events.some(e => String(e.id) !== String(editingId) && e.status === "Confirmado" && data.status === "Confirmado" && e.date === data.date && data.start < e.end && data.end > e.start);
@@ -1342,6 +1370,10 @@ async function uploadReceipts(input) {
   render();
 }
 async function handleAction(action, btn) {
+  if (action === "reload-page") {
+    window.location.href = "/?v=20260625-db-guard";
+    return;
+  }
   if (action === "logout") {
     localStorage.removeItem("vm_session");
     localStorage.removeItem("vm_user");
