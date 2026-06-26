@@ -128,6 +128,19 @@ async function getPool() {
   return poolPromise;
 }
 
+async function readEvents(pool) {
+  const result = await pool.query("select value from app_state where key = 'events'");
+  return Array.isArray(result.rows[0]?.value) ? result.rows[0].value : [];
+}
+
+async function writeEvents(pool, events) {
+  await pool.query(`
+    insert into app_state(key, value, updated_at)
+    values('events', $1::jsonb, now())
+    on conflict(key) do update set value = excluded.value, updated_at = now()
+  `, [JSON.stringify(events)]);
+}
+
 async function handleApi(req, res, pathname) {
   const pool = await getPool();
   if (!pool) {
@@ -222,12 +235,34 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "PUT" && pathname === "/api/events") {
     const events = JSON.parse(await readBody(req));
-    await pool.query(`
-      insert into app_state(key, value, updated_at)
-      values('events', $1::jsonb, now())
-      on conflict(key) do update set value = excluded.value, updated_at = now()
-    `, [JSON.stringify(events)]);
+    await writeEvents(pool, events);
     sendJson(res, 200, { ok: true });
+    return true;
+  }
+
+  if (req.method === "POST" && pathname === "/api/events/upsert") {
+    const event = JSON.parse(await readBody(req));
+    if (!event || event.id === undefined || event.id === null) {
+      sendJson(res, 400, { error: "Event id is required" });
+      return true;
+    }
+    const events = await readEvents(pool);
+    const index = events.findIndex(item => String(item.id) === String(event.id));
+    const nextEvents = index >= 0
+      ? events.map(item => String(item.id) === String(event.id) ? event : item)
+      : [event, ...events];
+    await writeEvents(pool, nextEvents);
+    sendJson(res, 200, { ok: true, events: nextEvents });
+    return true;
+  }
+
+  const eventDeleteMatch = pathname.match(/^\/api\/events\/([^/]+)$/);
+  if (req.method === "DELETE" && eventDeleteMatch) {
+    const eventId = decodeURIComponent(eventDeleteMatch[1]);
+    const events = await readEvents(pool);
+    const nextEvents = events.filter(item => String(item.id) !== String(eventId));
+    await writeEvents(pool, nextEvents);
+    sendJson(res, 200, { ok: true, events: nextEvents });
     return true;
   }
 

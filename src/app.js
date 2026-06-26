@@ -594,6 +594,50 @@ async function saveEvents() {
   }
 }
 
+function markSaved() {
+  state.saveStatus = `Última alteração salva às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+async function saveEventRecord(eventRecord) {
+  if (api.available) {
+    try {
+      const data = await requestJson("/api/events/upsert", {
+        method: "POST",
+        body: JSON.stringify(eventRecord)
+      });
+      state.events = normalizeEvents(data.events || state.events);
+      localStorage.setItem("vm_events", JSON.stringify(state.events));
+      markSaved();
+      return;
+    } catch (error) {
+      state.saveStatus = "Falha ao salvar. Tente novamente.";
+      throw error;
+    }
+  }
+  const exists = state.events.some(event => String(event.id) === String(eventRecord.id));
+  state.events = exists
+    ? state.events.map(event => String(event.id) === String(eventRecord.id) ? eventRecord : event)
+    : [eventRecord, ...state.events];
+  await saveEvents();
+}
+
+async function deleteEventRecord(eventId) {
+  if (api.available) {
+    try {
+      const data = await requestJson(`/api/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+      state.events = normalizeEvents(data.events || state.events.filter(event => String(event.id) !== String(eventId)));
+      localStorage.setItem("vm_events", JSON.stringify(state.events));
+      markSaved();
+      return;
+    } catch (error) {
+      state.saveStatus = "Falha ao salvar. Tente novamente.";
+      throw error;
+    }
+  }
+  state.events = state.events.filter(event => String(event.id) !== String(eventId));
+  await saveEvents();
+}
+
 async function saveCalendarNotes() {
   localStorage.setItem("vm_calendar_notes", JSON.stringify(state.calendarNotes));
   if (api.available) {
@@ -1222,28 +1266,25 @@ async function createEvent(event) {
   delete payload.editId;
   delete payload.paidOff;
   delete payload.servicesText;
-  if (editingId) {
-    state.events = state.events.map(e => String(e.id) === String(editingId) ? {
-      ...e,
-      ...payload,
-      checklist: e.checklist || ["Estrutura conferida"],
-      documents: e.documents || []
-    } : e);
-    state.editEventId = null;
-  } else {
-    state.events.unshift({
-      ...payload,
-      checklist: ["Estrutura conferida"],
-      documents: []
-    });
-  }
+  const currentEvent = state.events.find(e => String(e.id) === String(editingId));
+  const nextEvent = editingId ? {
+    ...currentEvent,
+    ...payload,
+    checklist: currentEvent?.checklist || ["Estrutura conferida"],
+    documents: currentEvent?.documents || []
+  } : {
+    ...payload,
+    checklist: ["Estrutura conferida"],
+    documents: []
+  };
   try {
-    await saveEvents();
+    await saveEventRecord(nextEvent);
   } catch (error) {
     alert("Não consegui salvar essa alteração. Verifique a conexão e tente clicar em salvar novamente.");
     render();
     return;
   }
+  state.editEventId = null;
   render();
 }
 
@@ -1344,9 +1385,14 @@ async function handleAction(action, btn) {
     if (!event) return;
     const ok = confirm(`Excluir o evento "${event.name}"? Essa ação remove o exemplo da lista.`);
     if (!ok) return;
-    state.events = state.events.filter(item => String(item.id) !== String(btn.dataset.eventId));
+    try {
+      await deleteEventRecord(btn.dataset.eventId);
+    } catch (error) {
+      alert("Não consegui excluir esse evento. Verifique a conexão e tente novamente.");
+      render();
+      return;
+    }
     if (String(state.editEventId) === String(btn.dataset.eventId)) state.editEventId = null;
-    await saveEvents();
     render();
   }
   if (action === "cancel-edit") {
