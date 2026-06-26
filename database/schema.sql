@@ -27,3 +27,9 @@ create table if not exists app_users (
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+create table if not exists app_events (
+  id text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);

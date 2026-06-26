@@ -115,6 +115,22 @@ async function getPool() {
           created_at timestamptz not null default now()
         );
       `);
+      await pool.query(`
+        create table if not exists app_events (
+          id text primary key,
+          value jsonb not null,
+          updated_at timestamptz not null default now()
+        );
+      `);
+      await pool.query(`
+        insert into app_events(id, value, updated_at)
+        select item->>'id', item, now()
+        from app_state, jsonb_array_elements(value) as item
+        where key = 'events'
+          and jsonb_typeof(value) = 'array'
+          and item ? 'id'
+        on conflict(id) do nothing;
+      `);
       const users = await pool.query("select count(*)::int as total from app_users");
       if (!users.rows[0].total) {
         await pool.query(
@@ -129,16 +145,44 @@ async function getPool() {
 }
 
 async function readEvents(pool) {
-  const result = await pool.query("select value from app_state where key = 'events'");
-  return Array.isArray(result.rows[0]?.value) ? result.rows[0].value : [];
+  const result = await pool.query(`
+    select value
+    from app_events
+    order by
+      coalesce(value->>'date', '') desc,
+      coalesce(value->>'start', '') desc,
+      updated_at desc
+  `);
+  if (result.rowCount) return result.rows.map(row => row.value);
+  const legacy = await pool.query("select value from app_state where key = 'events'");
+  return Array.isArray(legacy.rows[0]?.value) ? legacy.rows[0].value : [];
 }
 
 async function writeEvents(pool, events) {
+  const list = Array.isArray(events) ? events.filter(event => event && event.id !== undefined && event.id !== null) : [];
+  if (!list.length) return;
+  await pool.query("begin");
+  try {
+    for (const event of list) {
+      await pool.query(`
+        insert into app_events(id, value, updated_at)
+        values($1, $2::jsonb, now())
+        on conflict(id) do update set value = excluded.value, updated_at = now()
+      `, [String(event.id), JSON.stringify(event)]);
+    }
+    await pool.query("commit");
+  } catch (error) {
+    await pool.query("rollback");
+    throw error;
+  }
+}
+
+async function writeEvent(pool, event) {
   await pool.query(`
-    insert into app_state(key, value, updated_at)
-    values('events', $1::jsonb, now())
-    on conflict(key) do update set value = excluded.value, updated_at = now()
-  `, [JSON.stringify(events)]);
+    insert into app_events(id, value, updated_at)
+    values($1, $2::jsonb, now())
+    on conflict(id) do update set value = excluded.value, updated_at = now()
+  `, [String(event.id), JSON.stringify(event)]);
 }
 
 async function handleApi(req, res, pathname) {
@@ -227,7 +271,7 @@ async function handleApi(req, res, pathname) {
     const state = Object.fromEntries(result.rows.map(row => [row.key, row.value]));
     sendJson(res, 200, {
       storage: "postgres",
-      events: state.events || null,
+      events: await readEvents(pool),
       calendarNotes: state.calendarNotes || {}
     });
     return true;
@@ -246,23 +290,16 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: "Event id is required" });
       return true;
     }
-    const events = await readEvents(pool);
-    const index = events.findIndex(item => String(item.id) === String(event.id));
-    const nextEvents = index >= 0
-      ? events.map(item => String(item.id) === String(event.id) ? event : item)
-      : [event, ...events];
-    await writeEvents(pool, nextEvents);
-    sendJson(res, 200, { ok: true, events: nextEvents });
+    await writeEvent(pool, event);
+    sendJson(res, 200, { ok: true, events: await readEvents(pool) });
     return true;
   }
 
   const eventDeleteMatch = pathname.match(/^\/api\/events\/([^/]+)$/);
   if (req.method === "DELETE" && eventDeleteMatch) {
     const eventId = decodeURIComponent(eventDeleteMatch[1]);
-    const events = await readEvents(pool);
-    const nextEvents = events.filter(item => String(item.id) !== String(eventId));
-    await writeEvents(pool, nextEvents);
-    sendJson(res, 200, { ok: true, events: nextEvents });
+    await pool.query("delete from app_events where id = $1", [eventId]);
+    sendJson(res, 200, { ok: true, events: await readEvents(pool) });
     return true;
   }
 
