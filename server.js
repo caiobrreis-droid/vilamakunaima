@@ -6,7 +6,13 @@ const crypto = require("crypto");
 const root = __dirname;
 const port = Number(process.env.PORT || 4173);
 const databaseUrl = process.env.DATABASE_URL;
+const debugPersistence = process.env.DEBUG_PERSISTENCE === "1";
 let poolPromise;
+
+function persistLog(label, payload = {}) {
+  if (!debugPersistence) return;
+  console.log(`[persist] ${label}`, JSON.stringify(payload));
+}
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("hex");
@@ -153,13 +159,20 @@ async function readEvents(pool) {
       coalesce(value->>'start', '') desc,
       updated_at desc
   `);
-  if (result.rowCount) return result.rows.map(row => row.value);
+  if (result.rowCount) {
+    const events = result.rows.map(row => row.value);
+    persistLog("readEvents:app_events", { count: events.length, ids: events.map(event => event.id) });
+    return events;
+  }
   const legacy = await pool.query("select value from app_state where key = 'events'");
-  return Array.isArray(legacy.rows[0]?.value) ? legacy.rows[0].value : [];
+  const events = Array.isArray(legacy.rows[0]?.value) ? legacy.rows[0].value : [];
+  persistLog("readEvents:legacy_app_state", { count: events.length, ids: events.map(event => event.id) });
+  return events;
 }
 
 async function writeEvents(pool, events) {
   const list = Array.isArray(events) ? events.filter(event => event && event.id !== undefined && event.id !== null) : [];
+  persistLog("writeEvents:start", { count: list.length, ids: list.map(event => event.id) });
   if (!list.length) return;
   await pool.query("begin");
   try {
@@ -178,6 +191,7 @@ async function writeEvents(pool, events) {
 }
 
 async function writeEvent(pool, event) {
+  persistLog("writeEvent:start", { id: event?.id, name: event?.name });
   await pool.query(`
     insert into app_events(id, value, updated_at)
     values($1, $2::jsonb, now())
@@ -267,11 +281,14 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "GET" && pathname === "/api/state") {
+    persistLog("GET /api/state:start");
     const result = await pool.query("select key, value from app_state where key in ('events', 'calendarNotes')");
     const state = Object.fromEntries(result.rows.map(row => [row.key, row.value]));
+    const events = await readEvents(pool);
+    persistLog("GET /api/state:send", { count: events.length, ids: events.map(event => event.id) });
     sendJson(res, 200, {
       storage: "postgres",
-      events: await readEvents(pool),
+      events,
       calendarNotes: state.calendarNotes || {}
     });
     return true;
@@ -279,6 +296,7 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "PUT" && pathname === "/api/events") {
     const events = JSON.parse(await readBody(req));
+    persistLog("PUT /api/events", { count: Array.isArray(events) ? events.length : null, ids: Array.isArray(events) ? events.map(event => event.id) : [] });
     await writeEvents(pool, events);
     sendJson(res, 200, { ok: true });
     return true;
@@ -286,6 +304,7 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "POST" && pathname === "/api/events/upsert") {
     const event = JSON.parse(await readBody(req));
+    persistLog("POST /api/events/upsert", { id: event?.id, name: event?.name });
     if (!event || event.id === undefined || event.id === null) {
       sendJson(res, 400, { error: "Event id is required" });
       return true;

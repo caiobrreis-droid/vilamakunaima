@@ -183,8 +183,20 @@ const api = {
 
 let searchTimer;
 const app = document.querySelector("#app");
+const debugPersistence = new URLSearchParams(window.location.search).has("debugPersist");
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const dateFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+
+function persistLog(label, payload = {}) {
+  if (!debugPersistence) return;
+  console.log(`[persist] ${label}`, payload);
+}
+
+persistLog("state:init", {
+  source: localStorage.getItem("vm_events") ? "localStorage" : "demo.events",
+  count: state.events.length,
+  ids: state.events.map(event => event.id)
+});
 
 const navItems = [
   ["dashboard", "Painel"],
@@ -228,14 +240,23 @@ async function requestJson(url, options = {}) {
 }
 
 async function loadServerState() {
+  persistLog("loadServerState:start", { protocol: location.protocol });
   if (location.protocol === "file:") {
     if (state.logged && !state.user) state.user = state.users[0];
+    persistLog("loadServerState:file-protocol-skip");
     return;
   }
   try {
     const data = await requestJson("/api/state");
+    persistLog("loadServerState:api-state", {
+      storage: data.storage,
+      hasEventsArray: Array.isArray(data.events),
+      count: Array.isArray(data.events) ? data.events.length : null,
+      ids: Array.isArray(data.events) ? data.events.map(event => event.id) : []
+    });
     if (data.storage !== "postgres") {
       state.dataError = "O banco de dados online não está conectado. Nenhuma alteração será considerada salva.";
+      persistLog("loadServerState:not-postgres", { storage: data.storage });
       return;
     }
     api.available = true;
@@ -244,7 +265,9 @@ async function loadServerState() {
     if (Array.isArray(data.events)) {
       state.events = normalizeEvents(data.events);
       localStorage.setItem("vm_events", JSON.stringify(state.events));
+      persistLog("loadServerState:state-events-set", { count: state.events.length, ids: state.events.map(event => event.id) });
     } else {
+      persistLog("loadServerState:no-events-array-calling-saveEvents");
       await saveEvents();
     }
     if (data.calendarNotes && typeof data.calendarNotes === "object") {
@@ -257,6 +280,7 @@ async function loadServerState() {
   } catch (error) {
     state.dataError = "Não foi possível carregar os dados salvos. Recarregue a página antes de cadastrar ou editar eventos.";
     console.warn("API indisponível.", error);
+    persistLog("loadServerState:error", { message: error.message });
   }
 }
 
@@ -584,15 +608,18 @@ const totals = () => {
 async function saveEvents() {
   state.events = normalizeEvents(state.events);
   localStorage.setItem("vm_events", JSON.stringify(state.events));
+  persistLog("saveEvents:start", { apiAvailable: api.available, count: state.events.length, ids: state.events.map(event => event.id) });
   if (api.available) {
     try {
       await requestJson("/api/events", {
         method: "PUT",
         body: JSON.stringify(state.events)
       });
+      persistLog("saveEvents:server-ok");
       state.saveStatus = `Última alteração salva às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
     } catch (error) {
       state.saveStatus = "Falha ao salvar. Tente novamente.";
+      persistLog("saveEvents:server-error", { message: error.message });
       throw error;
     }
   } else {
@@ -605,6 +632,7 @@ function markSaved() {
 }
 
 async function saveEventRecord(eventRecord) {
+  persistLog("saveEventRecord:start", { apiAvailable: api.available, id: eventRecord?.id, name: eventRecord?.name });
   if (api.available) {
     try {
       const data = await requestJson("/api/events/upsert", {
@@ -613,10 +641,12 @@ async function saveEventRecord(eventRecord) {
       });
       state.events = normalizeEvents(data.events || state.events);
       localStorage.setItem("vm_events", JSON.stringify(state.events));
+      persistLog("saveEventRecord:server-ok", { count: state.events.length, ids: state.events.map(event => event.id) });
       markSaved();
       return;
     } catch (error) {
       state.saveStatus = "Falha ao salvar. Tente novamente.";
+      persistLog("saveEventRecord:server-error", { message: error.message });
       throw error;
     }
   }
@@ -628,11 +658,13 @@ async function saveEventRecord(eventRecord) {
 }
 
 async function deleteEventRecord(eventId) {
+  persistLog("deleteEventRecord:start", { apiAvailable: api.available, eventId });
   if (api.available) {
     try {
       const data = await requestJson(`/api/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
       state.events = normalizeEvents(data.events || state.events.filter(event => String(event.id) !== String(eventId)));
       localStorage.setItem("vm_events", JSON.stringify(state.events));
+      persistLog("deleteEventRecord:server-ok", { count: state.events.length, ids: state.events.map(event => event.id) });
       markSaved();
       return;
     } catch (error) {
@@ -656,6 +688,7 @@ async function saveCalendarNotes() {
 
 function render() {
   state.events = normalizeEvents(state.events);
+  persistLog("render", { logged: state.logged, dataError: state.dataError, count: state.events.length, ids: state.events.map(event => event.id) });
   document.body.classList.toggle("dark", state.dark);
   app.innerHTML = state.logged ? (state.dataError ? dataErrorScreen() : layout()) : login();
   bind();
@@ -1371,7 +1404,7 @@ async function uploadReceipts(input) {
 }
 async function handleAction(action, btn) {
   if (action === "reload-page") {
-    window.location.href = "/?v=20260625-db-guard";
+    window.location.href = "/";
     return;
   }
   if (action === "logout") {
@@ -1486,7 +1519,9 @@ function exportCsv() {
 }
 
 async function boot() {
+  persistLog("boot:start");
   await loadServerState();
+  persistLog("boot:after-loadServerState", { apiAvailable: api.available, count: state.events.length, ids: state.events.map(event => event.id) });
   render();
 }
 
