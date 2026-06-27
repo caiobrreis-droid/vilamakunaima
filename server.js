@@ -171,9 +171,12 @@ async function readEvents(pool) {
 }
 
 async function writeEvents(pool, events) {
-  const list = Array.isArray(events) ? events.filter(event => event && event.id !== undefined && event.id !== null) : [];
+  if (!Array.isArray(events)) {
+    throw new Error("Events payload must be an array");
+  }
+  const list = events.filter(event => event && event.id !== undefined && event.id !== null);
+  const ids = [...new Set(list.map(event => String(event.id)))];
   persistLog("writeEvents:start", { count: list.length, ids: list.map(event => event.id) });
-  if (!list.length) return;
   await pool.query("begin");
   try {
     for (const event of list) {
@@ -182,6 +185,13 @@ async function writeEvents(pool, events) {
         values($1, $2::jsonb, now())
         on conflict(id) do update set value = excluded.value, updated_at = now()
       `, [String(event.id), JSON.stringify(event)]);
+    }
+    if (ids.length) {
+      const result = await pool.query("delete from app_events where not (id = any($1::text[]))", [ids]);
+      persistLog("writeEvents:deleteMissing", { deleted: result.rowCount, keptIds: ids });
+    } else {
+      const result = await pool.query("delete from app_events");
+      persistLog("writeEvents:deleteAll", { deleted: result.rowCount });
     }
     await pool.query("commit");
   } catch (error) {
@@ -298,7 +308,7 @@ async function handleApi(req, res, pathname) {
     const events = JSON.parse(await readBody(req));
     persistLog("PUT /api/events", { count: Array.isArray(events) ? events.length : null, ids: Array.isArray(events) ? events.map(event => event.id) : [] });
     await writeEvents(pool, events);
-    sendJson(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true, events: await readEvents(pool) });
     return true;
   }
 

@@ -611,10 +611,12 @@ async function saveEvents() {
   persistLog("saveEvents:start", { apiAvailable: api.available, count: state.events.length, ids: state.events.map(event => event.id) });
   if (api.available) {
     try {
-      await requestJson("/api/events", {
+      const data = await requestJson("/api/events", {
         method: "PUT",
         body: JSON.stringify(state.events)
       });
+      state.events = normalizeEvents(data.events || state.events);
+      localStorage.setItem("vm_events", JSON.stringify(state.events));
       persistLog("saveEvents:server-ok");
       state.saveStatus = `Última alteração salva às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
     } catch (error) {
