@@ -128,15 +128,17 @@ async function getPool() {
           updated_at timestamptz not null default now()
         );
       `);
-      await pool.query(`
-        insert into app_events(id, value, updated_at)
-        select item->>'id', item, now()
-        from app_state,
-          jsonb_array_elements(case when jsonb_typeof(value) = 'array' then value else '[]'::jsonb end) as item
-        where key = 'events'
-          and item ? 'id'
-        on conflict(id) do nothing;
-      `);
+      if (process.env.MIGRATE_LEGACY_EVENTS === "1") {
+        await pool.query(`
+          insert into app_events(id, value, updated_at)
+          select item->>'id', item, now()
+          from app_state,
+            jsonb_array_elements(case when jsonb_typeof(value) = 'array' then value else '[]'::jsonb end) as item
+          where key = 'events'
+            and item ? 'id'
+          on conflict(id) do nothing;
+        `);
+      }
       const users = await pool.query("select count(*)::int as total from app_users");
       if (!users.rows[0].total) {
         await pool.query(
@@ -150,6 +152,35 @@ async function getPool() {
   return poolPromise;
 }
 
+function repairText(value) {
+  if (typeof value !== "string") return value;
+  const fixes = new Map([
+    ["Loca\uFFFD\uFFFDo", "Loca\u00E7\u00E3o"],
+    ["espa\uFFFDo", "espa\u00E7o"],
+    ["Decora\uFFFD\uFFFDo", "Decora\u00E7\u00E3o"],
+    ["Ilumina\uFFFD\uFFFDo", "Ilumina\u00E7\u00E3o"],
+    ["Seguran\uFFFDa", "Seguran\u00E7a"],
+    ["Cerim\uFFFDnia", "Cerim\u00F4nia"],
+    ["dan\uFFFDa", "dan\u00E7a"],
+    ["Servi\uFFFDos", "Servi\u00E7os"],
+    ["Relat\uFFFDrios", "Relat\u00F3rios"],
+    ["Configura\uFFFD\uFFFDes", "Configura\u00E7\u00F5es"],
+    ["Ocupa\uFFFD\uFFFDo", "Ocupa\u00E7\u00E3o"],
+    ["m\uFFFDs", "m\u00EAs"],
+    ["n\uFFFDo", "n\u00E3o"],
+    ["usu\uFFFDrio", "usu\u00E1rio"],
+    ["inv\uFFFDlidos", "inv\u00E1lidos"]
+  ]);
+  return [...fixes.entries()].reduce((text, [bad, good]) => text.replaceAll(bad, good), value);
+}
+function normalizeStoredValue(value) {
+  if (Array.isArray(value)) return value.map(normalizeStoredValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizeStoredValue(item)]));
+  }
+  return repairText(value);
+}
+
 async function readEvents(pool) {
   const result = await pool.query(`
     select value
@@ -159,14 +190,8 @@ async function readEvents(pool) {
       coalesce(value->>'start', '') desc,
       updated_at desc
   `);
-  if (result.rowCount) {
-    const events = result.rows.map(row => row.value);
-    persistLog("readEvents:app_events", { count: events.length, ids: events.map(event => event.id) });
-    return events;
-  }
-  const legacy = await pool.query("select value from app_state where key = 'events'");
-  const events = Array.isArray(legacy.rows[0]?.value) ? legacy.rows[0].value : [];
-  persistLog("readEvents:legacy_app_state", { count: events.length, ids: events.map(event => event.id) });
+  const events = result.rows.map(row => normalizeStoredValue(row.value));
+  persistLog("readEvents:app_events", { count: events.length, ids: events.map(event => event.id) });
   return events;
 }
 
@@ -174,7 +199,7 @@ async function writeEvents(pool, events) {
   if (!Array.isArray(events)) {
     throw new Error("Events payload must be an array");
   }
-  const list = events.filter(event => event && event.id !== undefined && event.id !== null);
+  const list = events.filter(event => event && event.id !== undefined && event.id !== null).map(normalizeStoredValue);
   const ids = [...new Set(list.map(event => String(event.id)))];
   persistLog("writeEvents:start", { count: list.length, ids: list.map(event => event.id) });
   await pool.query("begin");
@@ -201,12 +226,13 @@ async function writeEvents(pool, events) {
 }
 
 async function writeEvent(pool, event) {
-  persistLog("writeEvent:start", { id: event?.id, name: event?.name });
+  const cleanEvent = normalizeStoredValue(event);
+  persistLog("writeEvent:start", { id: cleanEvent?.id, name: cleanEvent?.name });
   await pool.query(`
     insert into app_events(id, value, updated_at)
     values($1, $2::jsonb, now())
     on conflict(id) do update set value = excluded.value, updated_at = now()
-  `, [String(event.id), JSON.stringify(event)]);
+  `, [String(cleanEvent.id), JSON.stringify(cleanEvent)]);
 }
 
 async function handleApi(req, res, pathname) {

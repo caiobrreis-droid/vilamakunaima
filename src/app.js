@@ -1,4 +1,4 @@
-﻿const demo = {
+const demo = {
   users: [
     { name: "Admin Vila", email: "admin@vilamakunaima.com", role: "Administrador" },
     { name: "Equipe Operacional", email: "equipe@vilamakunaima.com", role: "Funcionário/Equipe" },
@@ -173,7 +173,7 @@ const state = {
   dataError: "",
   calendarMode: "Mês",
   dark: localStorage.getItem("vm_theme") === "dark",
-  events: normalizeEvents(JSON.parse(localStorage.getItem("vm_events") || "null") || demo.events)
+  events: normalizeEvents(location.protocol === "file:" ? (JSON.parse(localStorage.getItem("vm_events") || "null") || demo.events) : [])
 };
 
 const api = {
@@ -255,6 +255,7 @@ async function loadServerState() {
       ids: Array.isArray(data.events) ? data.events.map(event => event.id) : []
     });
     if (data.storage !== "postgres") {
+      state.events = [];
       state.dataError = "O banco de dados online não está conectado. Nenhuma alteração será considerada salva.";
       persistLog("loadServerState:not-postgres", { storage: data.storage });
       return;
@@ -264,6 +265,13 @@ async function loadServerState() {
     state.dataError = "";
     if (Array.isArray(data.events)) {
       state.events = normalizeEvents(data.events);
+      const availableMonths = [...new Set(state.events.map(event => String(event.date || "").slice(0, 7)).filter(Boolean))].sort();
+      if (availableMonths.length && !availableMonths.includes(state.reportMonth)) {
+        state.reportMonth = availableMonths[0];
+        state.reportEventId = "all";
+        localStorage.setItem("vm_report_month", state.reportMonth);
+        localStorage.setItem("vm_report_event", state.reportEventId);
+      }
       localStorage.setItem("vm_events", JSON.stringify(state.events));
       persistLog("loadServerState:state-events-set", { count: state.events.length, ids: state.events.map(event => event.id) });
     } else {
@@ -278,6 +286,8 @@ async function loadServerState() {
     }
     await refreshUsers();
   } catch (error) {
+    state.events = [];
+    localStorage.removeItem("vm_events");
     state.dataError = "Não foi possível carregar os dados salvos. Recarregue a página antes de cadastrar ou editar eventos.";
     console.warn("API indisponível.", error);
     persistLog("loadServerState:error", { message: error.message });
@@ -306,42 +316,25 @@ function fileToBase64(file) {
 
 function normalizeText(value) {
   if (typeof value !== "string") return value;
-  const fixes = {
-    "Funcionário": "Funcionário",
-    "Locação": "Locação",
-    "espaço": "espaço",
-    "Decoração": "Decoração",
-    "Iluminação": "Iluminação",
-    "Segurança": "Segurança",
-    "Cerimônia": "Cerimônia",
-    "dança": "dança",
-    "Pré-reserva": "Pré-reserva",
-    "Transferência": "Transferência",
-    "Recepção": "Recepção",
-    "café": "café",
-    "Aniversário": "Aniversário",
-    "Cartão": "Cartão",
-    "Almoço": "Almoço",
-    "área": "área",
-    "Confraternização": "Confraternização",
-    "Clínica": "Clínica",
-    "Orçamento": "Orçamento",
-    "recreação": "recreação",
-    "Comissão": "Comissão",
-    "concluído": "concluído",
-    "pendências": "pendências",
-    "Manutenção": "Manutenção",
-    "dedetização": "dedetização",
-    "Região": "Região",
-    "Mês": "Mês",
-    "às": "às",
-    "crítico": "crítico",
-    "área de transferência": "área de transferência",
-    "·": "·"
-  };
-  return Object.entries(fixes).reduce((text, [bad, good]) => text.replaceAll(bad, good), value);
+  const corruptedFixes = new Map([
+    ["Loca\uFFFD\uFFFDo", "Loca\u00E7\u00E3o"],
+    ["espa\uFFFDo", "espa\u00E7o"],
+    ["Decora\uFFFD\uFFFDo", "Decora\u00E7\u00E3o"],
+    ["Ilumina\uFFFD\uFFFDo", "Ilumina\u00E7\u00E3o"],
+    ["Seguran\uFFFDa", "Seguran\u00E7a"],
+    ["Cerim\uFFFDnia", "Cerim\u00F4nia"],
+    ["dan\uFFFDa", "dan\u00E7a"],
+    ["Servi\uFFFDos", "Servi\u00E7os"],
+    ["Relat\uFFFDrios", "Relat\u00F3rios"],
+    ["Configura\uFFFD\uFFFDes", "Configura\u00E7\u00F5es"],
+    ["Ocupa\uFFFD\uFFFDo", "Ocupa\u00E7\u00E3o"],
+    ["m\uFFFDs", "m\u00EAs"],
+    ["n\uFFFDo", "n\u00E3o"],
+    ["usu\uFFFDrio", "usu\u00E1rio"],
+    ["inv\uFFFDlidos", "inv\u00E1lidos"]
+  ]);
+  return [...corruptedFixes.entries()].reduce((text, [bad, good]) => text.replaceAll(bad, good), value);
 }
-
 function normalizeValue(value) {
   if (Array.isArray(value)) return value.map(normalizeValue);
   if (value && typeof value === "object") {
@@ -1079,7 +1072,7 @@ function reports() {
 }
 
 function serviceRanking() {
-  return state.events.flatMap(e => e.services).reduce((acc, s) => ({ ...acc, [s]: (acc[s] || 0) + 1 }), {});
+  return state.events.flatMap(e => e.services || []).reduce((acc, s) => ({ ...acc, [s]: (acc[s] || 0) + 1 }), {});
 }
 
 function settings() {
