@@ -83,6 +83,7 @@ button { cursor: pointer; }
    ================================================ */
 .login-screen {
   min-height: 100vh;
+  height: 100vh;
   position: relative;
   overflow: hidden;
   display: grid;
@@ -94,13 +95,26 @@ button { cursor: pointer; }
   isolation: isolate;
 }
 .login-video, .login-video-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.login-video {
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  background: #020302;
+  transform: scale(1.01);
+}
+.login-video-shade {
   z-index: -1;
   background:
     linear-gradient(90deg, rgba(2,3,3,.82) 0%, rgba(5,6,5,.34) 34%, rgba(5,4,3,.40) 66%, rgba(4,3,2,.70) 100%),
     radial-gradient(circle at 21% 78%, rgba(209,151,45,.22), transparent 18rem),
     radial-gradient(circle at 79% 20%, rgba(218,176,86,.14), transparent 20rem),
     linear-gradient(180deg, rgba(0,0,0,.12), rgba(0,0,0,.38));
-  pointer-events: none;
 }
 .login-screen::before,
 .login-screen::after {
@@ -330,14 +344,14 @@ textarea { padding-top: 12px; min-height: 92px; resize: vertical; }
 .login-credit { display: none; }
 
 @media (max-width: 1180px) {
-  .login-screen { grid-template-columns: 1fr; justify-items: center; padding-bottom: 220px; }
+  .login-screen { min-height: 100vh; height: auto; grid-template-columns: 1fr; justify-items: center; padding-bottom: 220px; }
   .login-card { justify-self: center; }
   .login-hero { width: min(100%, 760px); text-align: center; margin-top: 94px; }
   .login-hero .login-subtitle { margin-left: auto; margin-right: auto; }
   .login-features { width: calc(100vw - 48px); left: 24px; grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 760px) {
-  .login-screen { padding: 22px 18px 28px; gap: 22px; }
+  .login-screen { min-height: 100vh; height: auto; padding: 22px 18px 28px; gap: 22px; }
   .login-brand-badge { position: relative; top: auto; left: auto; width: auto; min-height: 0; justify-self: start; }
   .login-hero { margin-top: 0; text-align: left; }
   .login-hero h1 { font-size: clamp(44px, 16vw, 62px); }
