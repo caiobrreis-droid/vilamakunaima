@@ -827,25 +827,33 @@ function login() {
         <source src="./assets/login-bg.mp4" type="video/mp4" />
       </video>
       <div class="login-video-shade" aria-hidden="true"></div>
-      <section class="login-card">
-        ${brandLogo("large")}
-        <p class="eyebrow">Vila Makunaima Eventos</p>
-        <h1>Bem-vindo ao sistema de eventos da Vila Makunaima</h1>
-        <p class="login-subtitle">Agenda, contratos, clientes e financeiro em um ambiente privado para a equipe.</p>
-        <form id="loginForm" class="form-stack">
-          <label>E-mail<input name="email" type="email" value="admin@vilamakunaima.com" required /></label>
-          <label>Senha<input name="password" type="password" value="admin123" required /></label>
-          <button class="primary" type="submit">Entrar</button>
-          <a href="#" class="muted-link">Esqueci minha senha</a>
-        </form>
+      <div class="login-brand-badge">${brandLogo("small")}</div>
+      <section class="login-hero">
+        <p class="eyebrow">Bem-vindo ao</p>
+        <h1>Vila Makunaima<br>Eventos</h1>
+        <p class="login-subtitle">Gerencie sua agenda, contratos, clientes e financeiro em um só lugar.</p>
       </section>
-      <footer class="login-credit">
-        Desenvolvido por <a href="https://www.instagram.com/sier_caio/" target="_blank" rel="noreferrer">Caio Reis</a>
-      </footer>
+      <section class="login-features" aria-label="Recursos do sistema">
+        <article><span>▦</span><strong>Agenda completa</strong><small>Visualize e organize todos os eventos em um só lugar.</small></article>
+        <article><span>◇</span><strong>Gestão de contratos</strong><small>Contratos, pagamentos e documentos organizados.</small></article>
+        <article><span>▥</span><strong>Relatórios inteligentes</strong><small>Acompanhe resultados e métricas em tempo real.</small></article>
+      </section>
+      <section class="login-card">
+        <div class="login-card-logo">${brandLogo("large")}</div>
+        <h1>Acesse <span>sua conta</span></h1>
+        <p class="login-subtitle">Entre para continuar gerenciando os eventos da Vila Makunaima.</p>
+        <form id="loginForm" class="form-stack">
+          <label>E-mail<input name="email" type="email" value="admin@vilamakunaima.com" placeholder="seu@email.com" required /></label>
+          <label><span class="label-row">Senha<a href="#" class="muted-link">Esqueceu sua senha?</a></span><input name="password" type="password" value="admin123" required /></label>
+          <button class="primary" type="submit"><span>→</span> Entrar na conta</button>
+        </form>
+        <footer class="login-credit-card">
+          Desenvolvido por <a href="https://www.instagram.com/sier_caio/" target="_blank" rel="noreferrer">Caio Reis</a>
+        </footer>
+      </section>
     </main>
   `;
 }
-
 function layout() {
   return `
     <div class="shell">
