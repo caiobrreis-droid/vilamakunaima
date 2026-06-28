@@ -230,6 +230,26 @@ function paymentInfo(event) {
   return { total, paid, open, paidOff };
 }
 
+function parseDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDate(value, fallback = "Sem data") {
+  const date = parseDate(value);
+  return date ? dateFmt.format(date) : fallback;
+}
+
+function isPaidOff(event) {
+  return paymentInfo(event).paidOff || ["Pago", "Pago/Quitado", "Quitado"].includes(event.paymentStatus);
+}
+
+function isPaymentLate(event) {
+  const due = parseDate(event.due);
+  return Boolean(due && !isPaidOff(event) && due < new Date("2026-06-25"));
+}
+
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -826,11 +846,11 @@ function dashboard() {
 }
 
 function alerts() {
-  const late = state.events.filter(e => e.paymentStatus !== "Pago" && new Date(e.due) < new Date("2026-06-25"));
+  const late = state.events.filter(isPaymentLate);
   const next = upcoming().slice(0, 2);
   return [
-    ...next.map(e => `<div class="alert"><strong>${e.name}</strong><span>${dateFmt.format(new Date(e.date))} às ${e.start}</span></div>`),
-    ...late.map(e => `<div class="alert danger"><strong>Pagamento pendente</strong><span>${e.client} vence em ${dateFmt.format(new Date(e.due))}</span></div>`)
+    ...next.map(e => `<div class="alert"><strong>${e.name}</strong><span>${formatDate(e.date)} às ${e.start || "--:--"}</span></div>`),
+    ...late.map(e => `<div class="alert danger"><strong>Pagamento pendente</strong><span>${e.client} vence em ${formatDate(e.due)}</span></div>`)
   ].join("") || `<div class="empty">Nenhum alerta crítico.</div>`;
 }
 
@@ -1006,13 +1026,16 @@ function clients() {
 }
 
 function finance() {
-  const rows = filteredEvents().map(e => [e.name, e.client, e.paymentStatus, brl.format(e.total), brl.format(e.paid), brl.format(e.total - e.paid), dateFmt.format(new Date(e.due))]);
+  const rows = filteredEvents().map(e => {
+    const payment = paymentInfo(e);
+    return [e.name, e.client, e.paymentStatus || "Pendente", brl.format(payment.total), brl.format(payment.paid), brl.format(payment.open), formatDate(e.due, "Sem vencimento")];
+  });
   return `
     <section class="metrics-grid compact">
       ${metric("Receitas previstas", brl.format(totals().revenue))}
       ${metric("Recebido", brl.format(totals().paid))}
       ${metric("Pendente", brl.format(totals().open))}
-      ${metric("Atrasados", state.events.filter(e => e.paymentStatus !== "Pago" && new Date(e.due) < new Date("2026-06-25")).length)}
+      ${metric("Atrasados", state.events.filter(isPaymentLate).length)}
     </section>
     ${tablePanel("Financeiro", ["Evento", "Cliente", "Status", "Total", "Pago", "Saldo", "Vencimento"], rows, true)}
   `;
