@@ -169,6 +169,7 @@ const state = {
   reportEventId: localStorage.getItem("vm_report_event") || "all",
   printReportMonth: null,
   printReportEventId: "all",
+  printFinance: false,
   saveStatus: "",
   dataError: "",
   calendarMode: "Mês",
@@ -544,6 +545,53 @@ function printMonthlyReport() {
   `;
 }
 
+function printFinanceSheet() {
+  if (!state.printFinance) return "";
+  const list = filteredEvents();
+  const total = list.reduce((sum, event) => sum + paymentInfo(event).total, 0);
+  const paid = list.reduce((sum, event) => sum + paymentInfo(event).paid, 0);
+  const open = Math.max(total - paid, 0);
+  const rows = list.map(event => {
+    const payment = paymentInfo(event);
+    return `
+      <tr>
+        <td>${escapeHtml(event.name || "")}</td>
+        <td>${escapeHtml(event.client || "")}</td>
+        <td>${escapeHtml(event.paymentStatus || "Pendente")}</td>
+        <td>${brl.format(payment.total)}</td>
+        <td>${brl.format(payment.paid)}</td>
+        <td>${brl.format(payment.open)}</td>
+        <td>${formatDate(event.due, "Sem vencimento")}</td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <section class="print-only monthly-print">
+      <header class="print-header">
+        ${brandLogo("small")}
+        <div>
+          <strong>Vila Makunaima Eventos</strong>
+          <span>Resumo financeiro</span>
+        </div>
+      </header>
+      <h1>Relatório financeiro</h1>
+      <p class="print-status">Emitido em ${new Date().toLocaleString("pt-BR")} · ${list.length} evento(s)</p>
+      <div class="print-grid">
+        <section><h2>Receitas previstas</h2><p>${brl.format(total)}</p></section>
+        <section><h2>Recebido</h2><p>${brl.format(paid)}</p></section>
+        <section><h2>Pendente</h2><p>${brl.format(open)}</p></section>
+        <section><h2>Atrasados</h2><p>${list.filter(isPaymentLate).length}</p></section>
+      </div>
+      <table class="print-table">
+        <thead>
+          <tr><th>Evento</th><th>Cliente</th><th>Status</th><th>Total</th><th>Pago</th><th>Saldo</th><th>Vencimento</th></tr>
+        </thead>
+        <tbody>${rows || `<tr><td colspan="7">Nenhum evento encontrado.</td></tr>`}</tbody>
+      </table>
+    </section>
+  `;
+}
+
 function openContractDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("vila-makunaima-documents", 1);
@@ -779,6 +827,7 @@ function layout() {
         </footer>
         ${printEventSheet()}
         ${printMonthlyReport()}
+        ${printFinanceSheet()}
       </main>
     </div>
   `;
@@ -1512,15 +1561,24 @@ async function handleAction(action, btn) {
     render();
     setTimeout(() => window.print(), 80);
   }
-  if (action === "print-page") window.print();
+  if (action === "print-page") {
+    if (state.view === "finance") {
+      state.printFinance = true;
+      render();
+      setTimeout(() => window.print(), 80);
+      return;
+    }
+    window.print();
+  }
   if (action === "export-csv") exportCsv();
 }
 
 window.addEventListener("afterprint", () => {
-  if (!state.printEventId && !state.printReportMonth) return;
+  if (!state.printEventId && !state.printReportMonth && !state.printFinance) return;
   state.printEventId = null;
   state.printReportMonth = null;
   state.printReportEventId = "all";
+  state.printFinance = false;
   render();
 });
 
