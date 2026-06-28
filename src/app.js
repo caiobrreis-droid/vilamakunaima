@@ -545,8 +545,7 @@ function printMonthlyReport() {
   `;
 }
 
-function printFinanceSheet() {
-  if (!state.printFinance) return "";
+function financeReportMarkup() {
   const list = filteredEvents();
   const total = list.reduce((sum, event) => sum + paymentInfo(event).total, 0);
   const paid = list.reduce((sum, event) => sum + paymentInfo(event).paid, 0);
@@ -566,32 +565,82 @@ function printFinanceSheet() {
     `;
   }).join("");
   return `
-    <section class="print-only monthly-print">
-      <header class="print-header">
-        ${brandLogo("small")}
-        <div>
-          <strong>Vila Makunaima Eventos</strong>
-          <span>Resumo financeiro</span>
-        </div>
-      </header>
-      <h1>Relatório financeiro</h1>
-      <p class="print-status">Emitido em ${new Date().toLocaleString("pt-BR")} · ${list.length} evento(s)</p>
-      <div class="print-grid">
-        <section><h2>Receitas previstas</h2><p>${brl.format(total)}</p></section>
-        <section><h2>Recebido</h2><p>${brl.format(paid)}</p></section>
-        <section><h2>Pendente</h2><p>${brl.format(open)}</p></section>
-        <section><h2>Atrasados</h2><p>${list.filter(isPaymentLate).length}</p></section>
+    <header class="print-header">
+      <div class="print-logo">VM</div>
+      <div>
+        <strong>Vila Makunaima Eventos</strong>
+        <span>Relatório financeiro completo</span>
       </div>
-      <table class="print-table">
-        <thead>
-          <tr><th>Evento</th><th>Cliente</th><th>Status</th><th>Total</th><th>Pago</th><th>Saldo</th><th>Vencimento</th></tr>
-        </thead>
-        <tbody>${rows || `<tr><td colspan="7">Nenhum evento encontrado.</td></tr>`}</tbody>
-      </table>
-    </section>
+    </header>
+    <h1>Relatório financeiro</h1>
+    <p class="print-status">Emitido em ${new Date().toLocaleString("pt-BR")} · ${list.length} evento(s)</p>
+    <div class="print-grid">
+      <section><h2>Receitas previstas</h2><p>${brl.format(total)}</p></section>
+      <section><h2>Recebido</h2><p>${brl.format(paid)}</p></section>
+      <section><h2>Pendente</h2><p>${brl.format(open)}</p></section>
+      <section><h2>Atrasados</h2><p>${list.filter(isPaymentLate).length}</p></section>
+    </div>
+    <table class="print-table">
+      <thead>
+        <tr><th>Evento</th><th>Cliente</th><th>Status</th><th>Total</th><th>Pago</th><th>Saldo</th><th>Vencimento</th></tr>
+      </thead>
+      <tbody>${rows || `<tr><td colspan="7">Nenhum evento encontrado.</td></tr>`}</tbody>
+    </table>
   `;
 }
 
+function printFinanceSheet() {
+  if (!state.printFinance) return "";
+  return `<section class="print-only monthly-print">${financeReportMarkup()}</section>`;
+}
+
+function printFinanceDocument() {
+  const report = financeReportMarkup();
+  const printWindow = window.open("", "_blank", "width=1100,height=800");
+  if (!printWindow) {
+    state.printFinance = true;
+    render();
+    setTimeout(() => window.print(), 120);
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Relatório financeiro - Vila Makunaima</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #15120c; background: #fff; font-family: Inter, Arial, sans-serif; }
+    .sheet { width: 100%; }
+    .print-header { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 2px solid #b8872d; margin-bottom: 20px; }
+    .print-logo { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: #d9b45f; color: #15120c; font-weight: 900; }
+    .print-header strong { display: block; font-size: 14px; }
+    .print-header span { display: block; color: #6d6250; font-size: 12px; margin-top: 3px; }
+    h1 { margin: 0 0 8px; font-family: Georgia, serif; font-size: 30px; }
+    .print-status { margin: 0 0 20px; color: #6d6250; font-weight: 700; }
+    .print-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+    .print-grid section { border: 1px solid #ddd4c5; border-radius: 6px; padding: 10px; break-inside: avoid; }
+    .print-grid h2 { margin: 0 0 8px; font-size: 11px; color: #6d6250; text-transform: uppercase; }
+    .print-grid p { margin: 0; font-size: 16px; font-weight: 800; }
+    .print-table { width: 100%; border-collapse: collapse; margin-top: 14px; table-layout: fixed; }
+    .print-table th, .print-table td { padding: 7px; border: 1px solid #ddd4c5; color: #15120c; font-size: 10px; vertical-align: top; word-break: break-word; }
+    .print-table th { background: #f4eddf; text-transform: uppercase; font-size: 9px; }
+    .print-table th:nth-child(1), .print-table td:nth-child(1) { width: 20%; }
+    .print-table th:nth-child(2), .print-table td:nth-child(2) { width: 18%; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body><main class="sheet">${report}</main></body>
+</html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 250);
+}
 function openContractDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("vila-makunaima-documents", 1);
@@ -1563,9 +1612,7 @@ async function handleAction(action, btn) {
   }
   if (action === "print-page") {
     if (state.view === "finance") {
-      state.printFinance = true;
-      render();
-      setTimeout(() => window.print(), 80);
+      printFinanceDocument();
       return;
     }
     window.print();
