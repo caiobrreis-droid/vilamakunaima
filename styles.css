@@ -94,24 +94,12 @@ button { cursor: pointer; }
   isolation: isolate;
 }
 .login-video, .login-video-shade {
-  position: absolute;
-  inset: 0;
-}
-.login-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  background: #020302;
-  transform: scale(1.01);
-}
-.login-video-shade {
   z-index: -1;
   background:
-    linear-gradient(90deg, rgba(3,4,4,.96) 0%, rgba(5,6,5,.54) 34%, rgba(5,4,3,.72) 66%, rgba(4,3,2,.96) 100%),
-    radial-gradient(circle at 21% 78%, rgba(209,151,45,.34), transparent 18rem),
-    radial-gradient(circle at 79% 20%, rgba(218,176,86,.24), transparent 20rem),
-    linear-gradient(180deg, rgba(0,0,0,.26), rgba(0,0,0,.68));
+    linear-gradient(90deg, rgba(2,3,3,.82) 0%, rgba(5,6,5,.34) 34%, rgba(5,4,3,.40) 66%, rgba(4,3,2,.70) 100%),
+    radial-gradient(circle at 21% 78%, rgba(209,151,45,.22), transparent 18rem),
+    radial-gradient(circle at 79% 20%, rgba(218,176,86,.14), transparent 20rem),
+    linear-gradient(180deg, rgba(0,0,0,.12), rgba(0,0,0,.38));
   pointer-events: none;
 }
 .login-screen::before,
@@ -137,15 +125,14 @@ button { cursor: pointer; }
   top: clamp(24px, 4vw, 54px);
   left: clamp(28px, 5vw, 72px);
   z-index: 2;
-  width: 118px;
-  min-height: 92px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(213,163,61,.24);
-  border-radius: 10px;
-  background: rgba(12,12,10,.44);
-  box-shadow: 0 22px 70px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06);
-  backdrop-filter: blur(12px);
+  width: auto;
+  min-height: 0;
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 .login-brand-badge .brand-mark { margin: 0; }
 .login-hero {
@@ -220,24 +207,24 @@ button { cursor: pointer; }
   width: min(100%, 520px);
   justify-self: end;
   padding: clamp(30px, 4vw, 52px);
-  border: 1px solid rgba(215,166,70,.34);
+  border: 1px solid rgba(215,166,70,.22);
   border-radius: 18px;
   background:
-    radial-gradient(circle at 50% 12%, rgba(215,166,70,.12), transparent 17rem),
-    rgba(13,13,12,.72);
-  box-shadow: 0 30px 100px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+    radial-gradient(circle at 50% 12%, rgba(215,166,70,.08), transparent 17rem),
+    rgba(8,8,7,.38);
+  box-shadow: 0 26px 90px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.06);
   color: #fff;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(8px);
 }
 .login-card::before {
   content: "";
   position: absolute;
   inset: 18px;
-  border: 1px solid rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.025);
   border-radius: 14px;
   pointer-events: none;
 }
-.login-card-logo { display: grid; justify-items: center; margin-bottom: 18px; }
+.login-card-logo { display: grid; justify-items: center; margin-bottom: 18px; opacity: .92; }
 .brand-mark {
   width: 70px;
   aspect-ratio: 1;
@@ -309,8 +296,8 @@ input:focus, select:focus, textarea:focus {
 .login-card input {
   min-height: 52px;
   border-radius: 8px;
-  border-color: rgba(223,184,100,.24);
-  background: rgba(16,15,13,.62);
+  border-color: rgba(223,184,100,.28);
+  background: rgba(10,9,7,.38);
   color: white;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
@@ -351,7 +338,7 @@ textarea { padding-top: 12px; min-height: 92px; resize: vertical; }
 }
 @media (max-width: 760px) {
   .login-screen { padding: 22px 18px 28px; gap: 22px; }
-  .login-brand-badge { position: relative; top: auto; left: auto; width: 96px; min-height: 74px; justify-self: start; }
+  .login-brand-badge { position: relative; top: auto; left: auto; width: auto; min-height: 0; justify-self: start; }
   .login-hero { margin-top: 0; text-align: left; }
   .login-hero h1 { font-size: clamp(44px, 16vw, 62px); }
   .login-hero .login-subtitle { margin-left: 0; }
